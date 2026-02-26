@@ -16,7 +16,7 @@ export const REGIONS_INITIAL = {
         name: 'Aquaria',
         water: 120, food: 70, energy: 50, land: 80,
         population: 500,
-        trade_weight: 0.25, hoard_weight: 0.25, invest_weight: 0.25, aggress_weight: 0.25,
+        strategy_weights: { trade: 0.25, hoard: 0.25, invest: 0.25, aggress: 0.25 },
         health_score: 0.75,
         trust: { Agrovia: 0.5, Petrozon: 0.5, Urbanex: 0.5, Terranova: 0.5 },
     },
@@ -24,7 +24,7 @@ export const REGIONS_INITIAL = {
         name: 'Agrovia',
         water: 70, food: 130, energy: 60, land: 60,
         population: 450,
-        trade_weight: 0.25, hoard_weight: 0.25, invest_weight: 0.25, aggress_weight: 0.25,
+        strategy_weights: { trade: 0.25, hoard: 0.25, invest: 0.25, aggress: 0.25 },
         health_score: 0.75,
         trust: { Aquaria: 0.5, Petrozon: 0.5, Urbanex: 0.5, Terranova: 0.5 },
     },
@@ -32,7 +32,7 @@ export const REGIONS_INITIAL = {
         name: 'Petrozon',
         water: 60, food: 60, energy: 140, land: 50,
         population: 480,
-        trade_weight: 0.25, hoard_weight: 0.25, invest_weight: 0.25, aggress_weight: 0.25,
+        strategy_weights: { trade: 0.25, hoard: 0.25, invest: 0.25, aggress: 0.25 },
         health_score: 0.70,
         trust: { Aquaria: 0.5, Agrovia: 0.5, Urbanex: 0.5, Terranova: 0.5 },
     },
@@ -40,7 +40,7 @@ export const REGIONS_INITIAL = {
         name: 'Urbanex',
         water: 60, food: 60, energy: 60, land: 50,
         population: 700,
-        trade_weight: 0.25, hoard_weight: 0.25, invest_weight: 0.25, aggress_weight: 0.25,
+        strategy_weights: { trade: 0.25, hoard: 0.25, invest: 0.25, aggress: 0.25 },
         health_score: 0.60,
         trust: { Aquaria: 0.5, Agrovia: 0.5, Petrozon: 0.5, Terranova: 0.5 },
     },
@@ -48,11 +48,12 @@ export const REGIONS_INITIAL = {
         name: 'Terranova',
         water: 80, food: 80, energy: 70, land: 120,
         population: 520,
-        trade_weight: 0.25, hoard_weight: 0.25, invest_weight: 0.25, aggress_weight: 0.25,
+        strategy_weights: { trade: 0.25, hoard: 0.25, invest: 0.25, aggress: 0.25 },
         health_score: 0.78,
         trust: { Aquaria: 0.5, Agrovia: 0.5, Petrozon: 0.5, Urbanex: 0.5 },
     },
 };
+
 
 // Visual metadata per region
 export const REGION_META = {

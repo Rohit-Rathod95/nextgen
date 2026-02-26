@@ -21,12 +21,16 @@ export default function StrategyRadar({ region, regionName }) {
     const meta = REGION_META[regionName] || {};
     const color = meta.color || '#38bdf8';
 
+    // Backend sends nested: strategy_weights: { trade, hoard, invest, aggress }
+    // Fallback: flat fields (demo mode from regions_meta.js) or default 0.25
+    const sw = region.strategy_weights || {};
     const values = [
-        region.trade_weight ?? 0.25,
-        region.hoard_weight ?? 0.25,
-        region.invest_weight ?? 0.25,
-        region.aggress_weight ?? 0.25,
+        sw.trade ?? region.trade_weight ?? 0.25,
+        sw.hoard ?? region.hoard_weight ?? 0.25,
+        sw.invest ?? region.invest_weight ?? 0.25,
+        sw.aggress ?? region.aggress_weight ?? 0.25,
     ];
+
 
     const data = {
         labels: LABELS,

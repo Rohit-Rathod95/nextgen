@@ -1,4 +1,5 @@
 // Firestore listener — subscribes to real-time Firestore snapshots for live simulation updates.
+// All normalization of backend field formats happens HERE so components always see a clean contract.
 import { initializeApp } from 'firebase/app';
 import {
     getFirestore,
@@ -35,21 +36,118 @@ try {
     console.warn('[WorldSim] Firebase not configured — running in demo mode with initial values.');
 }
 
+// ─── Normalization Helpers ────────────────────────────────────────────────────
+
+// Capitalise first letter: "aquaria" → "Aquaria"
+function capitalize(str) {
+    if (!str) return str;
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+}
+
+/**
+ * normalizeRegion — converts the raw Firestore region document into the
+ * shape the frontend components expect.
+ *
+ * Backend writes:                          Frontend expects:
+ *   region_id: "aquaria"          →  name: "Aquaria"
+ *   strategy_weights: {trade:0.25}→  strategy_weights: {trade:0.25}  (kept nested, components updated)
+ *   trust_scores: {aquaria: 50}   →  trust: {Aquaria: 0.5}  (0-100 → 0-1, keys capitalised)
+ */
+function normalizeRegion(raw) {
+    // Capitalise the region name used as the lookup key
+    const name = capitalize(raw.region_id || raw.name || '');
+
+    // strategy_weights — backend already sends nested {trade, hoard, invest, aggress}
+    // Keep as-is; components will read strategy_weights.trade etc.
+    const strategy_weights = raw.strategy_weights || {
+        trade: 0.25, hoard: 0.25, invest: 0.25, aggress: 0.25,
+    };
+
+    // trust_scores — backend sends {aquaria: 50} (0-100, lowercase)
+    // Normalise to {Aquaria: 0.5} (0-1, capitalised) for frontend
+    const trust = {};
+    const rawTrust = raw.trust_scores || raw.trust || {};
+    Object.entries(rawTrust).forEach(([k, v]) => {
+        const capKey = capitalize(k);
+        // If value > 1 it's the 0-100 scale, normalise to 0-1
+        trust[capKey] = v > 1 ? v / 100 : v;
+    });
+
+    return {
+        ...raw,
+        name,
+        strategy_weights,
+        trust,
+        // Ensure resource fields are numbers
+        water: Number(raw.water ?? 0),
+        food: Number(raw.food ?? 0),
+        energy: Number(raw.energy ?? 0),
+        land: Number(raw.land ?? 0),
+        population: Number(raw.population ?? 0),
+        health_score: Number(raw.health_score ?? 0),
+    };
+}
+
+/**
+ * normalizeEvent — maps backend event fields to the frontend event shape.
+ *
+ * Backend writes:                      Frontend EventLog expects:
+ *   source_region / target_region  →  regions_involved: [source, target]
+ *   type                           →  type (kept as-is)
+ *   description                    →  description (kept as-is)
+ *   cycle                          →  cycle (kept as-is)
+ */
+function normalizeEvent(raw) {
+    const src = capitalize(raw.source_region || '');
+    const tgt = capitalize(raw.target_region || '');
+
+    return {
+        ...raw,
+        regions_involved: [src, tgt].filter(Boolean),
+        // resource field is not written by backend yet — default to null
+        resource: raw.resource || null,
+    };
+}
+
+/**
+ * normalizeAnalysis — maps backend analysis fields to the frontend overlay shape.
+ *
+ * Backend writes:           Frontend AnalysisOverlay expects:
+ *   insights               →  key_insights
+ *   collapse_events        →  collapsed_regions
+ *   alliance_events        →  alliance_clusters
+ *   real_world_parallel    →  real_world_parallel (kept)
+ *   dominant_strategy      →  dominant_strategy (kept)
+ */
+function normalizeAnalysis(raw) {
+    return {
+        ...raw,
+        key_insights: raw.key_insights || raw.insights || [],
+        collapsed_regions: raw.collapsed_regions || raw.collapse_events || [],
+        alliance_clusters: raw.alliance_clusters || raw.alliance_events || [],
+        dominant_strategy: raw.dominant_strategy || 'Unknown',
+        real_world_parallel: raw.real_world_parallel || '',
+    };
+}
+
 // ─── useRegions ───────────────────────────────────────────────────────────────
-// Returns live region data keyed by name. Falls back to REGIONS_INITIAL if
-// Firestore is not configured.
+// Listens to `regions` collection. Documents are keyed by lowercase region_id.
+// Returns an object keyed by CAPITALISED region name: { Aquaria: {...}, ... }
 export function useRegions() {
     const [regions, setRegions] = useState(() => ({ ...REGIONS_INITIAL }));
 
     useEffect(() => {
         if (!isFirebaseReady) return;
 
+        // Backend collection: "regions", document IDs are lowercase region names
         const col = collection(db, 'regions');
         const unsub = onSnapshot(col, (snap) => {
             const data = {};
             snap.forEach((docSnap) => {
-                const d = docSnap.data();
-                data[d.name] = d;
+                const raw = { ...docSnap.data(), region_id: docSnap.id };
+                const norm = normalizeRegion(raw);
+                // Key by capitalised name so components can do regions["Aquaria"]
+                data[norm.name] = norm;
             });
             if (Object.keys(data).length > 0) setRegions(data);
         }, (err) => {
@@ -63,16 +161,19 @@ export function useRegions() {
 }
 
 // ─── useWorldState ────────────────────────────────────────────────────────────
+// Backend writes: current_cycle, is_running, current_event — already matches frontend!
 export function useWorldState() {
     const [worldState, setWorldState] = useState({
         current_cycle: 0,
         current_event: 'None',
         is_running: false,
+        speed: 1.0,
     });
 
     useEffect(() => {
         if (!isFirebaseReady) return;
 
+        // Backend doc path: world_state/current
         const d = doc(db, 'world_state', 'current');
         const unsub = onSnapshot(d, (snap) => {
             if (snap.exists()) setWorldState(snap.data());
@@ -87,23 +188,28 @@ export function useWorldState() {
 }
 
 // ─── useEventsLog ─────────────────────────────────────────────────────────────
+// Backend collection: "events" (NOT "events_log").
+// Normalises source_region/target_region → regions_involved array.
 export function useEventsLog(maxItems = 50) {
     const [events, setEvents] = useState([]);
 
     useEffect(() => {
         if (!isFirebaseReady) return;
 
+        // BUG FIX: was 'events_log', backend writes to 'events'
         const q = query(
-            collection(db, 'events_log'),
+            collection(db, 'events'),
             orderBy('cycle', 'desc'),
             limit(maxItems)
         );
         const unsub = onSnapshot(q, (snap) => {
             const data = [];
-            snap.forEach((docSnap) => data.push({ id: docSnap.id, ...docSnap.data() }));
+            snap.forEach((docSnap) =>
+                data.push(normalizeEvent({ id: docSnap.id, ...docSnap.data() }))
+            );
             setEvents(data);
         }, (err) => {
-            console.warn('[WorldSim] EventsLog snapshot error:', err.message);
+            console.warn('[WorldSim] Events snapshot error:', err.message);
         });
 
         return () => unsub();
@@ -113,16 +219,19 @@ export function useEventsLog(maxItems = 50) {
 }
 
 // ─── useAnalysis ──────────────────────────────────────────────────────────────
+// Backend writes to: analysis/insights document.
+// Normalises field names: insights→key_insights, collapse_events→collapsed_regions, etc.
 export function useAnalysis() {
     const [analysis, setAnalysis] = useState(null);
 
     useEffect(() => {
         if (!isFirebaseReady) return;
 
-        const col = collection(db, 'analysis');
-        const unsub = onSnapshot(col, (snap) => {
-            if (!snap.empty) {
-                setAnalysis(snap.docs[0].data());
+        // Backend writes a single doc: analysis/insights
+        const d = doc(db, 'analysis', 'insights');
+        const unsub = onSnapshot(d, (snap) => {
+            if (snap.exists()) {
+                setAnalysis(normalizeAnalysis(snap.data()));
             }
         }, (err) => {
             console.warn('[WorldSim] Analysis snapshot error:', err.message);
