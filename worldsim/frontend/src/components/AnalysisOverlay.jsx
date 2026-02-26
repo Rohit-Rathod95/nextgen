@@ -317,63 +317,227 @@ Year 15+: Resource depletion pressure peaked. Networks made the difference in su
 The single biggest turning point was likely the first major climate event — it forced immediate adaptation and revealed which regions were truly resilient.`;
     };
 
-    const generateAnswer = (question) => {
-        const q = question.toLowerCase();
-        const winner = getWinner();
-        const loser = getFirstCollapsed();
+    const generateAnswer = (question, analysis, regions, cycleLogs) => {
+        const q = question.toLowerCase().trim();
 
-        if (
-            q.includes('why') &&
-            (q.includes('win') ||
-                q.includes('winner') ||
-                q.includes('best') ||
-                q.includes('succeed'))
-        ) {
-            return generateWinnerAnswer(winner);
+        const COUNTRY_TO_REGION = {
+            "brazil": "Aquaria", "south america": "Aquaria", "aquaria": "Aquaria",
+            "india": "Agrovia", "agrovia": "Agrovia",
+            "gulf": "Petrozon", "arab": "Petrozon", "saudi": "Petrozon", "petrozon": "Petrozon",
+            "china": "Urbanex", "urbanex": "Urbanex",
+            "africa": "Terranova", "terranova": "Terranova"
+        };
+
+        const REGION_LABELS = {
+            Aquaria: "Aquaria (Brazil)", Agrovia: "Agrovia (India)", Petrozon: "Petrozon (Gulf States)",
+            Urbanex: "Urbanex (China)", Terranova: "Terranova (Africa)"
+        };
+
+        const RESOURCE_KEYWORDS = {
+            water: ["water", "h2o", "drink", "river", "rain", "liquid"],
+            food: ["food", "crop", "farm", "grain", "eat", "hunger", "famine", "wheat", "rice"],
+            energy: ["energy", "oil", "fuel", "power", "electricity", "solar", "coal", "gas"],
+            land: ["land", "soil", "territory", "earth", "ground", "area", "farm land", "arable"]
+        };
+
+        function findMentionedRegion(q) {
+            for (const [keyword, regionId] of Object.entries(COUNTRY_TO_REGION)) {
+                if (q.includes(keyword)) return regionId;
+            }
+            return null;
         }
 
-        if (
-            q.includes('collapse') ||
-            q.includes('fall') ||
-            (q.includes('why') && loser)
-        ) {
-            return generateCollapseAnswer(loser);
+        function findMentionedResource(q) {
+            for (const [resource, keywords] of Object.entries(RESOURCE_KEYWORDS)) {
+                if (keywords.some(k => q.includes(k))) return resource;
+            }
+            return null;
         }
 
-        if (q.includes('alliance') || q.includes('cooperat')) {
-            return generateAllianceAnswer();
+        function getRegion(regionId) {
+            return regions?.[regionId];
         }
 
-        if (
-            q.includes('climate') ||
-            q.includes('weather') ||
-            q.includes('event') ||
-            q.includes('disaster')
-        ) {
-            return generateClimateAnswer();
+        function getClimateEventsForResource(resource) {
+            const eventMap = { water: "drought", food: "flood", energy: "energy_crisis", land: "flood" };
+            const targetType = eventMap[resource];
+            return (cycleLogs || []).reduce((count, log) => {
+                const events = log.events_fired || [];
+                return count + events.filter(e => e.type === 'climate' && e.outcome === targetType).length;
+            }, 0);
         }
 
-        if (q.includes('real world') || q.includes('reality')) {
-            return `${analysis?.real_world_parallel || 'This simulation reflects modern geopolitical resource competition.'}\n\nSimulation window: 2025-2045.`;
+        function getEventsForCycle(cycleNum) {
+            return cycleLogs?.find(l => l.cycle === cycleNum)?.events_fired || [];
         }
 
-        if (
-            q.includes('year') ||
-            q.includes('breakdown') ||
-            q.includes('timeline')
-        ) {
-            return generateTimelineAnswer();
+        function getInitialValue(regionId, resource) {
+            const firstLog = cycleLogs?.[0];
+            const snap = firstLog?.regions_snapshot?.[regionId];
+            return snap?.[resource] || null;
         }
 
-        if (q.includes('strategy') || q.includes('approach')) {
-            return generateStrategyAnswer();
+        function getWinner() {
+            if (!regions) return null;
+            return Object.entries(regions)
+                .filter(([_, r]) => !r.is_collapsed)
+                .sort(([, a], [, b]) => (b.health_score || 0) - (a.health_score || 0))[0]?.[0];
         }
 
-        if (q.includes('turning point') || q.includes('biggest')) {
-            return generateTurningPointAnswer();
+        function getCollapsed() {
+            return analysis?.collapsed_regions || [];
         }
 
-        return `Based on the simulation data: ${analysis?.simulation_summary || 'The simulation revealed complex geopolitical dynamics over 20 years.'}`;
+        function yr(cycle) {
+            return 2025 + (cycle || 0);
+        }
+
+        function getConsumptionReason(regionId, resource) {
+            const reasons = {
+                Urbanex: {
+                    water: "Urbanex (China) has the highest population (950+) consuming 3.5 units per cycle.",
+                    food: "Massive population demands 3.5 food units per cycle. Urbanex cannot produce enough internally.",
+                    energy: "Industrial economy burns 3.0 energy per cycle — second highest consumer.",
+                    land: "Dense population with only 20 starting land — most land stressed region."
+                },
+                Aquaria: {
+                    water: "Despite water regeneration ability (+5/cycle), heavy consumption of 2.5/cycle and drought events drew reserves down.",
+                    food: "No food regeneration ability. Consumption of 1.8/cycle with no natural recovery.",
+                    energy: "Low energy reserves with no regeneration — relied on Petrozon energy trades.",
+                    land: "Moderate land consumption kept land relatively stable."
+                },
+                Agrovia: {
+                    water: "Agriculture demands high water consumption at 2.0/cycle despite no natural water surplus.",
+                    food: "Food regeneration (+6/cycle) offset consumption but drought and flood events disrupted this.",
+                    energy: "No energy regeneration — relied entirely on Petrozon trades to survive.",
+                    land: "Intensive farming degraded land over time."
+                },
+                Petrozon: {
+                    water: "Desert geography — started at only 20 water with no regeneration. Water is critical vulnerability.",
+                    food: "Cannot grow food internally. Entirely dependent on Agrovia food imports each cycle.",
+                    energy: "Energy regenerates at +5/cycle but self consumption of 3.5/cycle leaves little surplus.",
+                    land: "Desert land with moderate stability — not primary stress point."
+                },
+                Terranova: {
+                    water: "Moderate water with steady consumption — not the primary stress point.",
+                    food: "Good food base but consumed at 2.0/cycle. Invest actions helped maintain levels.",
+                    energy: "No regeneration ability — energy declined steadily without trade partnerships.",
+                    land: "Land development ability means investing improves land quality over time."
+                }
+            };
+            return reasons[regionId]?.[resource] || `${resource} was consumed each cycle.`;
+        }
+
+        // ─── GROUP 1: RESOURCE QUESTIONS ───
+        const mentionedResource = findMentionedResource(q);
+        const isResourceQuestion = (q.includes("why") || q.includes("how") || q.includes("what happened") || q.includes("low") || q.includes("less") || q.includes("drop") || q.includes("fell") || q.includes("decrease")) && mentionedResource !== null;
+
+        if (isResourceQuestion) {
+            const resource = mentionedResource;
+            const mentionedRegion = findMentionedRegion(q);
+
+            if (mentionedRegion) {
+                const r = getRegion(mentionedRegion);
+                const label = REGION_LABELS[mentionedRegion];
+                const finalVal = r?.[resource] ? Math.round(r[resource]) : "N/A";
+                const initialVal = getInitialValue(mentionedRegion, resource);
+                const climateCount = getClimateEventsForResource(resource);
+                const reason = getConsumptionReason(mentionedRegion, resource);
+                const drop = initialVal && r?.[resource] ? Math.round(initialVal - r[resource]) : null;
+
+                return `📊 ${label} — ${resource} analysis:\n\n${initialVal !== null ? `Started: ${Math.round(initialVal)}\nEnded: ${finalVal}\nDrop: ${drop > 0 ? drop : 0} units\n` : `Final: ${finalVal}`}\n\nWhy: ${reason}\n\nClimate: ${climateCount > 0 ? `${climateCount} events affected ${resource}` : "No major climate impacts"}`;
+            } else {
+                const regionsByResource = Object.entries(regions || {}).map(([id, r]) => ({
+                    id, label: REGION_LABELS[id], value: Math.round(r?.[resource] || 0)
+                })).sort((a, b) => a.value - b.value);
+                return `${resource.toUpperCase()} Status:\n\n${regionsByResource.map(r => `${r.label}: ${r.value}`).join('\n')}\n\nMost stressed: ${regionsByResource[0]?.label}`;
+            }
+        }
+
+        // ─── GROUP 2: REGION QUESTIONS ───
+        const mentionedRegion = findMentionedRegion(q);
+        const isRegionQuestion = mentionedRegion !== null && (q.includes("why") || q.includes("how") || q.includes("what") || q.includes("status") || q.includes("survive") || q.includes("collapse"));
+
+        if (isRegionQuestion) {
+            const r = getRegion(mentionedRegion);
+            const label = REGION_LABELS[mentionedRegion];
+            const collapsed = getCollapsed().find(c => c.region === mentionedRegion);
+            const winner = getWinner();
+            const isWinner = winner === mentionedRegion;
+
+            return `📊 ${label}\n\nStatus: ${r?.is_collapsed ? '💀 COLLAPSED' : '✅ Alive'}\nHealth: ${r?.health_score?.toFixed(1) || 'N/A'}\n${isWinner ? '🏆 STRONGEST' : ''}\n\nResources:\n💧 Water: ${Math.round(r?.water || 0)}\n🌾 Food: ${Math.round(r?.food || 0)}\n⚡ Energy: ${Math.round(r?.energy || 0)}\n🏔️ Land: ${Math.round(r?.land || 0)}\n\nPopulation: ${Math.round(r?.population || 0)}\nStrategy: ${r?.strategy_label || 'Balanced'}`;
+        }
+
+        // ─── GROUP 3: YEAR/CYCLE QUESTIONS ───
+        const yearMatch = q.match(/year\s*(\d{4})|year\s*(\d{1,2})|cycle\s*(\d{1,2})/i);
+        if (yearMatch) {
+            let cycleNum = null;
+            if (yearMatch[1]) cycleNum = parseInt(yearMatch[1]) - 2025;
+            else if (yearMatch[2]) cycleNum = parseInt(yearMatch[2]);
+            else if (yearMatch[3]) cycleNum = parseInt(yearMatch[3]);
+
+            if (cycleNum !== null && cycleNum >= 1 && cycleNum <= 20) {
+                const events = getEventsForCycle(cycleNum);
+                const climate = events.filter(e => e.type === 'climate');
+                const trades = events.filter(e => e.type === 'trade' && e.outcome === 'trade_success');
+                const conflicts = events.filter(e => e.type === 'conflict');
+
+                return `📅 Year ${yr(cycleNum)}:\n\nClimate Events: ${climate.length}\nSuccessful Trades: ${trades.length}\nConflicts: ${conflicts.length}`;
+            }
+        }
+
+        // ─── GROUP 4: POPULATION QUESTIONS ───
+        if (q.includes("population") || q.includes("people") || q.includes("died")) {
+            const specificRegion = findMentionedRegion(q);
+            if (specificRegion) {
+                const r = getRegion(specificRegion);
+                const label = REGION_LABELS[specificRegion];
+                const initial = getInitialValue(specificRegion, 'population');
+                const current = Math.round(r?.population || 0);
+                const change = initial ? current - Math.round(initial) : null;
+
+                return `👥 ${label} Population:\n\n${initial ? `Started: ${Math.round(initial)}\nEnded: ${current}\nChange: ${change > 0 ? '+' : ''}${change}` : `Current: ${current}`}`;
+            }
+        }
+
+        // ─── GROUP 5: CLIMATE QUESTIONS ───
+        if (q.includes("climate") || q.includes("drought") || q.includes("flood") || q.includes("weather") || q.includes("disaster")) {
+            const allClimateEvents = (cycleLogs || []).flatMap(log => (log.events_fired || []).filter(e => e.type === 'climate'));
+            return `🌍 Climate Events: ${allClimateEvents.length} total\n\nImpacts:\n🌵 Drought: -45% water\n🌊 Flood: -35% food\n⚡ Crisis: -40% energy`;
+        }
+
+        // ─── GROUP 6: ALLIANCE QUESTIONS ───
+        if (q.includes("alliance") || q.includes("cooperat") || q.includes("partner") || q.includes("trade with")) {
+            const alliances = analysis?.alliance_clusters || [];
+            return `🤝 Alliances: ${alliances.length} formed\n\n${alliances.length === 0 ? 'No stable alliances this simulation.' : 'Partnerships formed through successful trade.'}`;
+        }
+
+        // ─── GROUP 7: WINNER/LOSER QUESTIONS ───
+        if (q.includes("who won") || q.includes("winner") || q.includes("strongest") || q.includes("best")) {
+            const winner = getWinner();
+            const r = getRegion(winner);
+            return `🏆 Winner: ${REGION_LABELS[winner]}\n\nFinal Health: ${r?.health_score?.toFixed(1)}\nStrategy: ${r?.strategy_label}\nPopulation: ${Math.round(r?.population || 0)}`;
+        }
+
+        if (q.includes("who lost") || q.includes("collapse") || q.includes("worst") || q.includes("weakest")) {
+            const collapsed = getCollapsed();
+            return `Collapsed regions: ${collapsed.length > 0 ? collapsed.map(c => REGION_LABELS[c.region] || c.region).join(', ') : 'None — all survived! 🎉'}`;
+        }
+
+        // ─── GROUP 8: STRATEGY QUESTIONS ───
+        if (q.includes("strategy") || q.includes("approach") || q.includes("tactic")) {
+            return `📊 Strategies:\n\n🤝 Trader: Build trust & alliances\n🛡️ Hoarder: Conserve resources\n📈 Investor: Improve long-term capacity\n⚔️ Aggressor: Seize resources (high risk)`;
+        }
+
+        // ─── GROUP 9: SUMMARY/GENERAL ───
+        if (q.includes("summary") || q.includes("explain") || q.includes("overview")) {
+            const winner = getWinner();
+            const collapsed = getCollapsed();
+            return `🌍 Simulation Summary:\n\nWinner: ${REGION_LABELS[winner] || 'Tie'}\nCollapsed: ${collapsed.length}\nAlliances: ${analysis?.alliance_clusters?.length || 0}\n\n${analysis?.simulation_summary || 'Complex geopolitical dynamics over 20 years.'}`;
+        }
+
+        // ─── DEFAULT FALLBACK ───
+        return `I can answer:\n💧 Resources\n🌍 Regions\n📅 Years\n👥 Population\n⚡ Climate\n🤝 Alliances\n🏆 Winners\n📊 Strategy\n\nAsk a specific question!`;
     };
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -387,7 +551,7 @@ The single biggest turning point was likely the first major climate event — it
     const handleChipClick = (question) => {
         addMessage('user', question);
         setTimeout(() => {
-            const answer = generateAnswer(question);
+            const answer = generateAnswer(question, analysis, regions, cycleLogs);
             addMessage('analyst', answer);
         }, 300);
     };
@@ -395,7 +559,7 @@ The single biggest turning point was likely the first major climate event — it
     const handleSend = () => {
         if (!input.trim()) return;
         addMessage('user', input);
-        const answer = generateAnswer(input);
+        const answer = generateAnswer(input, analysis, regions, cycleLogs);
         setTimeout(() => {
             addMessage('analyst', answer);
         }, 300);

@@ -88,6 +88,7 @@ function normalizeRegion(raw) {
         // Population metadata
         population_trend: raw.population_trend || 'stable',
         population_history: raw.population_history || [],
+        history: raw.history || [],
         // Ensure resource fields are numbers
         water: Number(raw.water ?? 0),
         food: Number(raw.food ?? 0),
@@ -206,7 +207,7 @@ export function useEventsLog(maxItems = 50) {
     useEffect(() => {
         if (!isFirebaseReady) return;
 
-        // BUG FIX: was 'events_log', backend writes to 'events'
+        // backend collection is "events"; limit to provided count (50 is reasonable)
         const q = query(
             collection(db, 'events'),
             orderBy('cycle', 'desc'),
@@ -226,6 +227,75 @@ export function useEventsLog(maxItems = 50) {
     }, [maxItems]);
 
     return events;
+}
+
+
+// ─── useActiveTrades ─────────────────────────────────────────────────────────
+// Tracks pairs of regions that traded successfully within the last 3 cycles.
+// Returns array of objects { source, target, count, lastCycle, events } sorted by recent.
+export function useActiveTrades() {
+    const [activeTrades, setActiveTrades] = useState([]);
+
+    useEffect(() => {
+        if (!isFirebaseReady) return;
+
+        const unsubscribe = onSnapshot(
+            collection(db, 'events'),
+            (snapshot) => {
+                const allEvents = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+                const tradeEvents = allEvents.filter(
+                    (e) => e.type === 'trade' && e.outcome === 'trade_success'
+                );
+
+                if (tradeEvents.length === 0) {
+                    setActiveTrades([]);
+                    return;
+                }
+
+                const maxCycle = Math.max(...tradeEvents.map((e) => e.cycle || 0));
+                const recentCycleThreshold = maxCycle - 3;
+
+                const recentTrades = tradeEvents.filter(
+                    (e) => (e.cycle || 0) >= recentCycleThreshold
+                );
+
+                const tradePairs = {};
+                recentTrades.forEach((e) => {
+                    const src = e.source_region?.toLowerCase();
+                    const tgt = e.target_region?.toLowerCase();
+                    if (!src || !tgt) return;
+
+                    const pairKey = [src, tgt].sort().join('__');
+                    if (!tradePairs[pairKey]) {
+                        tradePairs[pairKey] = {
+                            source: src,
+                            target: tgt,
+                            count: 0,
+                            lastCycle: 0,
+                            events: [],
+                        };
+                    }
+                    tradePairs[pairKey].count += 1;
+                    tradePairs[pairKey].lastCycle = Math.max(
+                        tradePairs[pairKey].lastCycle,
+                        e.cycle || 0
+                    );
+                    tradePairs[pairKey].events.push(e);
+                });
+
+                const activeList = Object.values(tradePairs)
+                    .filter((p) => p.count > 0)
+                    .sort((a, b) => b.lastCycle - a.lastCycle);
+
+                setActiveTrades(activeList);
+            }
+        );
+
+        return () => unsubscribe();
+    }, []);
+
+    return activeTrades;
 }
 
 // ─── useAnalysis ──────────────────────────────────────────────────────────────

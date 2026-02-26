@@ -166,7 +166,7 @@ export default function RegionPanel({ region, regionName, onClose }) {
 
             {/* Strategy Radar */}
             <div className="glass rounded-xl p-3">
-                <StrategyRadar region={region} regionName={regionName} />
+                <StrategyRadar region={region} regionId={regionName} />
             </div>
         </div>
     );

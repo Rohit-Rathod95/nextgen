@@ -24,16 +24,8 @@ export default function App() {
     // Auto-show analysis when simulation completes
     const simComplete = (worldState?.current_cycle ?? 0) >= TOTAL_CYCLES && !worldState?.is_running;
 
-    // Derive active trades from recent events
-    const activeTrades = events
-        .filter((e) => e.type === 'trade' && e.regions_involved?.length >= 2)
-        .slice(0, 6)
-        .map((e) => ({
-            from: e.regions_involved[0],
-            to: e.regions_involved[1],
-            resource: e.resource || 'water',
-            volume: e.volume || 20,
-        }));
+    // NOTE: activeTrades are now calculated within WorldMap using a dedicated hook.
+    // The previous slice/limit logic here was capping at six trades, so it has been removed.
 
     function handleSelectRegion(name) {
         setSelectedRegion((prev) => (prev === name ? null : name));
@@ -71,7 +63,6 @@ export default function App() {
                             regions={regions}
                             selectedRegion={selectedRegion}
                             onRegionSelect={handleSelectRegion}
-                            activeTrades={activeTrades}
                         />
                     </div>
 

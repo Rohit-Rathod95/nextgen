@@ -356,6 +356,11 @@ class Region:
             "strategy_label":      self.strategy_label,
             "manufacturing_power": round(self.manufacturing_power, 2),
             "population_change":   self.population_change,
+            # include strategy weights so frontend can chart evolution
+            "trade_weight":   round(self.strategy_weights["trade"],   4),
+            "hoard_weight":   round(self.strategy_weights["hoard"],   4),
+            "invest_weight":  round(self.strategy_weights["invest"],  4),
+            "aggress_weight": round(self.strategy_weights["aggress"], 4),
         })
 
     # -----------------------------------------------------------------------
@@ -387,6 +392,8 @@ class Region:
             "population_change_ratio": round(self.population_change_ratio, 4),
             "population_trend":        self.population_trend,
             "population_history":     list(self.population_history),
+            # full history snapshots (used by frontend heatmaps/charts)
+            "history":                list(self.history),
             # Flat strategy weights
             "trade_weight":   round(self.strategy_weights["trade"],   4),
             "hoard_weight":   round(self.strategy_weights["hoard"],   4),

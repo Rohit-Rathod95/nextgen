@@ -1,75 +1,79 @@
-// TradeLines component — animated arcs showing active trade routes and conflicts between regions.
-import React, { useMemo } from 'react';
-import { REGION_META } from '../constants/regions_meta';
+import React from 'react';
+import { useActiveTrades } from '../services/firestore_listener';
 
-function curvedPath(x1, y1, x2, y2) {
-    const mx = (x1 + x2) / 2;
-    const my = (y1 + y2) / 2 - 50;
-    return `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`;
-}
+// Renders all active trade relationships as animated SVG arcs.  A "strong"
+// relationship (>=3 successful trades in the last 3 cycles) appears as a thick
+// solid green line with a moving dot and optional count badge.  Weaker pairs
+// are thin dashed light-green lines.
+//
+// regionPositions must map lowercase region IDs to {x,y} pixel positions on
+// the same SVG canvas. TradeLines does not compute any projections itself.
 
-export default function TradeLines({ lastEvents }) {
-    const lines = useMemo(() => {
-        if (!lastEvents || lastEvents.length === 0) return [];
-        const result = [];
-        // Only show events from the last 3 cycles
-        const recentEvents = lastEvents.slice(0, 10);
-        recentEvents.forEach((ev) => {
-            if (!ev.regions_involved || ev.regions_involved.length < 2) return;
-            const [a, b] = ev.regions_involved;
-            const metaA = REGION_META[a];
-            const metaB = REGION_META[b];
-            if (!metaA || !metaB) return;
-            result.push({
-                key: `${ev.id || Math.random()}`,
-                x1: metaA.cx, y1: metaA.cy,
-                x2: metaB.cx, y2: metaB.cy,
-                type: ev.type,
-            });
-        });
-        return result;
-    }, [lastEvents]);
+const TradeLines = ({ regionPositions }) => {
+    const activeTrades = useActiveTrades();
+
+    if (!activeTrades || activeTrades.length === 0) {
+        return null;
+    }
 
     return (
-        <>
-            <defs>
-                <marker id="arrow-trade" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L6,3 Z" fill="#38bdf8" />
-                </marker>
-                <marker id="arrow-conflict" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-                    <path d="M0,0 L0,6 L6,3 Z" fill="#ef4444" />
-                </marker>
-                {/* Animated dash */}
-                <style>{`
-          @keyframes dashMove {
-            to { stroke-dashoffset: -24; }
-          }
-          .trade-line { animation: dashMove 1s linear infinite; }
-          .conflict-line { animation: dashMove 0.6s linear infinite; }
-        `}</style>
-            </defs>
+        <g className="trade-lines">
+            {activeTrades.map((trade, index) => {
+                const srcPos = regionPositions[trade.source];
+                const tgtPos = regionPositions[trade.target];
+                if (!srcPos || !tgtPos) return null;
 
-            {lines.map((l) => {
-                const isTrade = l.type === 'trade';
-                const isConflict = l.type === 'conflict';
-                const color = isTrade ? '#38bdf8' : isConflict ? '#ef4444' : '#94a3b8';
-                const cls = isTrade ? 'trade-line' : isConflict ? 'conflict-line' : '';
-                const marker = isTrade ? 'url(#arrow-trade)' : isConflict ? 'url(#arrow-conflict)' : undefined;
+                const key = `${trade.source}__${trade.target}__${index}`;
+                const isStrong = trade.count >= 3;
+
+                const midX = (srcPos.x + tgtPos.x) / 2;
+                const midY = (srcPos.y + tgtPos.y) / 2;
+                const dx = tgtPos.x - srcPos.x;
+                const dy = tgtPos.y - srcPos.y;
+                const curvature = isStrong ? 0.25 : 0.15;
+                const cpX = midX - dy * curvature;
+                const cpY = midY + dx * curvature;
+
+                const pathD = `M ${srcPos.x} ${srcPos.y} Q ${cpX} ${cpY} ${tgtPos.x} ${tgtPos.y}`;
+                const strokeColor = isStrong ? '#22c55e' : '#86efac';
+                const strokeWidth = isStrong ? 2.5 : 1.5;
+                const strokeOpacity = isStrong ? 0.85 : 0.55;
+                const dashArray = isStrong ? 'none' : '4,3';
 
                 return (
-                    <path
-                        key={l.key}
-                        d={curvedPath(l.x1, l.y1, l.x2, l.y2)}
-                        fill="none"
-                        stroke={color}
-                        strokeWidth={isTrade ? 2 : 2.5}
-                        strokeDasharray={isTrade ? '8 6' : '4 4'}
-                        opacity="0.75"
-                        markerEnd={marker}
-                        className={cls}
-                    />
+                    <g key={key}>
+                        <path
+                            d={pathD}
+                            fill="none"
+                            stroke={strokeColor}
+                            strokeWidth={strokeWidth}
+                            strokeOpacity={strokeOpacity}
+                            strokeDasharray={dashArray}
+                        />
+
+                        <circle r="3" fill={strokeColor} opacity="0.9">
+                            <animateMotion
+                                dur={`${1.5 + index * 0.2}s`}
+                                repeatCount="indefinite"
+                                path={pathD}
+                            />
+                        </circle>
+
+                        <text
+                            x={cpX}
+                            y={cpY - 6}
+                            fill="#86efac"
+                            fontSize="8"
+                            textAnchor="middle"
+                            opacity="0.7"
+                        >
+                            {trade.count > 1 ? `×${trade.count}` : ''}
+                        </text>
+                    </g>
                 );
             })}
-        </>
+        </g>
     );
-}
+};
+
+export default TradeLines;

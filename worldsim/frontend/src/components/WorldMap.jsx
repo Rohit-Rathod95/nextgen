@@ -1,7 +1,8 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useRef } from 'react';
 import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
 import { GLOBAL_CONSTANTS } from '../constants/regions_meta';
 import TradeLines from './TradeLines';
+import { useActiveTrades, useEventsLog, useWorldState } from '../services/firestore_listener';
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 
@@ -64,16 +65,78 @@ const PULSE_STYLE = `
     0%,100% { fill-opacity: 0.27; }
     50%      { fill-opacity: 0.48; }
   }
+  @keyframes fadeOut {
+    0%   { opacity: 0.8; }
+    70%  { opacity: 0.8; }
+    100% { opacity: 0; }
+  }
+  .conflict-fade {
+    animation: fadeOut 3s ease-out forwards;
+    opacity: 0.8;
+  }
 `;
 
 // ─── Main Component ──────────────────────────────────────────────────────────
-export default function WorldMap({ regions, activeTrades, onRegionSelect, selectedRegion }) {
+export default function WorldMap({ regions, onRegionSelect, selectedRegion }) {
     const [hoveredRegion, setHoveredRegion] = useState(null);
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+    const [regionPositions, setRegionPositions] = useState({});
+    const regionPosRef = useRef({});
+    const svgRef = useRef(null);
 
-    const tradesArray = useMemo(() => (activeTrades || []).slice(0, 8), [activeTrades]);
-    const activeTradeCount = tradesArray.length;
+    const activeTrades = useActiveTrades();
+    const activeTradeCount = activeTrades.length;
     const anySelected = !!selectedRegion;
+
+    const events = useEventsLog(50);
+    const worldState = useWorldState();
+    const currentCycle = worldState?.current_cycle;
+
+    const conflictEvents = events.filter(
+        (e) => e.type === 'conflict' && e.cycle === currentCycle
+    );
+
+    const registerPosition = (regionName) => (el) => {
+        if (!el || !svgRef.current) return;
+        
+        // Get the marker's screen position
+        const markerMatrix = el.getScreenCTM();
+        if (!markerMatrix) return;
+        const screenX = markerMatrix.e;
+        const screenY = markerMatrix.f;
+        
+        // Get the SVG's screen position to convert screen coords to local SVG coords
+        const svgMatrix = svgRef.current.getScreenCTM();
+        if (!svgMatrix) return;
+        
+        // Convert screen coordinates to SVG local coordinates
+        const svgX = (screenX - svgMatrix.e) / svgMatrix.a;
+        const svgY = (screenY - svgMatrix.f) / svgMatrix.d;
+        
+        const coords = { x: svgX, y: svgY };
+        const key = regionName.toLowerCase();
+        const existing = regionPosRef.current[key];
+        
+        // only update if changed or not present
+        if (
+            !existing ||
+            Math.abs(existing.x - coords.x) > 0.5 ||
+            Math.abs(existing.y - coords.y) > 0.5
+        ) {
+            regionPosRef.current[key] = coords;
+            // cause a re-render with updated object copy
+            setRegionPositions({ ...regionPosRef.current });
+        }
+    };
+
+    // Capture SVG element after ComposableMap renders
+    React.useEffect(() => {
+        // Find the SVG element inside the map canvas container
+        const svgElement = document.querySelector('#worldmap-svg-container svg');
+        if (svgElement) {
+            svgRef.current = svgElement;
+        }
+    }, []);
 
     // O(1) country→region lookup keyed on numeric geo.id
     const countryToRegion = useMemo(() => {
@@ -129,6 +192,7 @@ export default function WorldMap({ regions, activeTrades, onRegionSelect, select
 
             {/* ── Map Canvas ──────────────────────────────────────────────────── */}
             <div
+                id="worldmap-svg-container"
                 style={{ flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0 }}
                 onClick={handleMapClick}
                 onMouseMove={handleMouseMove}
@@ -259,8 +323,62 @@ export default function WorldMap({ regions, activeTrades, onRegionSelect, select
                         }
                     </Geographies>
 
-                    {/* ── Animated Trade Arcs ─────────────────────────────────────── */}
-                    <TradeLines lastEvents={activeTrades} />
+                    {/* ── Animated Trade Arcs & Conflicts ─────────────────────────────────── */}
+                    <TradeLines regionPositions={regionPositions} />
+
+                    {/* conflict paths (fade out) */}
+                    {conflictEvents.map((ev, idx) => {
+                        const src = ev.source_region?.toLowerCase();
+                        const tgt = ev.target_region?.toLowerCase();
+                        const srcPos = regionPositions[src];
+                        const tgtPos = regionPositions[tgt];
+                        if (!srcPos || !tgtPos) return null;
+
+                        const midX = (srcPos.x + tgtPos.x) / 2;
+                        const midY = (srcPos.y + tgtPos.y) / 2;
+                        const dx = tgtPos.x - srcPos.x;
+                        const dy = tgtPos.y - srcPos.y;
+                        const curvature = 0.15;
+                        const cpX = midX - dy * curvature;
+                        const cpY = midY + dx * curvature;
+                        const pathD = `M ${srcPos.x} ${srcPos.y} Q ${cpX} ${cpY} ${tgtPos.x} ${tgtPos.y}`;
+                        return (
+                            <path
+                                key={`conflict-${idx}`}
+                                d={pathD}
+                                fill="none"
+                                stroke="#ef4444"
+                                strokeWidth={2}
+                                strokeDasharray="4,4"
+                                className="conflict-fade"
+                            />
+                        );
+                    })}
+
+                    {/* Legend Box */}
+                    <foreignObject x="10" y="220" width="160" height="90">
+                        <div xmlns="http://www.w3.org/1999/xhtml" style={{
+                            background: 'rgba(0,0,0,0.5)',
+                            borderRadius: '6px',
+                            padding: '6px 10px',
+                            fontSize: '10px',
+                            color: '#e2e8f0',
+                            lineHeight: '1.4',
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div style={{ width: '24px', height: '2px', background: '#22c55e' }} />
+                                Strong Alliance (3+ cycles)
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div style={{ width: '24px', height: '2px', borderBottom: '2px dashed #86efac' }} />
+                                Active Trade
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <div style={{ width: '24px', height: '2px', borderBottom: '2px dashed #ef4444' }} />
+                                Conflict
+                            </div>
+                        </div>
+                    </foreignObject>
 
                     {/* ── Region Pins ─────────────────────────────────────────────── */}
                     {Object.entries(REGION_CONFIG).map(([name, cfg]) => {
@@ -280,10 +398,14 @@ export default function WorldMap({ regions, activeTrades, onRegionSelect, select
                         return (
                             <Marker key={name} coordinates={cfg.coordinates}>
                                 <g
+                                    ref={registerPosition(name)}
                                     onClick={(e) => handlePinClick(name, e)}
                                     style={{ cursor: 'pointer', opacity: pinOpacity, transition: 'opacity 0.3s ease' }}
                                     filter={isSelected ? 'url(#pinGlowSelected)' : 'url(#pinGlow)'}
                                 >
+                                    {/* Invisible reference point at marker center for position tracking */}
+                                    <circle r="0.5" fill="none" opacity="0" />
+
                                     {/* Scale wrapper */}
                                     <g transform={isSelected ? 'scale(1.25)' : 'scale(1)'}
                                         style={{ transformOrigin: '0 0', transition: 'transform 0.3s cubic-bezier(0.34,1.56,0.64,1)' }}>
@@ -330,22 +452,6 @@ export default function WorldMap({ regions, activeTrades, onRegionSelect, select
                                             style={{ filter: `drop-shadow(0 0 5px ${dotColor})` }}
                                         />
 
-                                        {/* Trade orbit dots */}
-                                        {tradesArray
-                                            .filter((t) => t.from === name || t.to === name)
-                                            .slice(0, 4)
-                                            .map((t, idx, arr) => {
-                                                const angle = (idx / Math.max(arr.length, 1)) * Math.PI * 2;
-                                                const dc = RESOURCE_COLORS[t.resource] || '#94a3b8';
-                                                const orbitR = bodyR + 8;
-                                                return (
-                                                    <circle key={`orbit-${idx}`}
-                                                        cx={Math.cos(angle) * orbitR} cy={Math.sin(angle) * orbitR}
-                                                        r={3} fill={dc} opacity={0.9}
-                                                        style={{ filter: `drop-shadow(0 0 4px ${dc})` }}
-                                                    />
-                                                );
-                                            })}
                                     </g>
 
                                     {/* Labels (outside scale) */}
