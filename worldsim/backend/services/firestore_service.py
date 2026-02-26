@@ -28,6 +28,14 @@ from firebase_admin import firestore
 
 logger = logging.getLogger("firestore_service")
 
+
+def _check_db() -> bool:
+    """Return True if Firestore is available, False otherwise."""
+    if db is None:
+        logger.debug("Firestore not available — write skipped.")
+        return False
+    return True
+
 # ---------------------------------------------------------------------------
 # Collection Name Constants
 # ---------------------------------------------------------------------------
@@ -61,6 +69,8 @@ def write_region_state(region_data: dict) -> bool:
     Returns:
         True if the write succeeded, False otherwise.
     """
+    if not _check_db():
+        return False
     try:
         region_id = region_data.get("region_id")
         if not region_id:
@@ -102,6 +112,8 @@ def write_all_regions(regions_list: list) -> bool:
     Returns:
         True if the batch commit succeeded, False otherwise.
     """
+    if not _check_db():
+        return False
     try:
         batch = db.batch()
 
@@ -147,10 +159,13 @@ def write_world_state(cycle: int, running: bool, speed: float) -> bool:
     Returns:
         True if the write succeeded, False otherwise.
     """
+    if not _check_db():
+        return False
     try:
         data = {
-            "cycle": cycle,
-            "running": running,
+            "current_cycle": cycle,
+            "is_running": running,
+            "current_event": "None",
             "speed": speed,
             "updated_at": firestore.SERVER_TIMESTAMP,
         }
@@ -193,6 +208,8 @@ def write_event(event_type: str,
     Returns:
         True if the write succeeded, False otherwise.
     """
+    if not _check_db():
+        return False
     try:
         data = {
             "type": event_type,
@@ -235,6 +252,8 @@ def write_cycle_log(cycle: int, regions_snapshot: dict) -> bool:
     Returns:
         True if the write succeeded, False otherwise.
     """
+    if not _check_db():
+        return False
     try:
         # Zero-pad cycle number for consistent ordering
         doc_id = f"cycle_{str(cycle).zfill(3)}"
@@ -281,6 +300,8 @@ def write_analysis(insights: list,
     Returns:
         True if the write succeeded, False otherwise.
     """
+    if not _check_db():
+        return False
     try:
         data = {
             "insights": insights,
@@ -320,6 +341,8 @@ def initialize_regions(initial_data: list) -> bool:
     Returns:
         True if both the region write and world state write succeeded.
     """
+    if not _check_db():
+        return False
     try:
         # Write all 5 regions atomically
         regions_ok = write_all_regions(initial_data)
@@ -360,6 +383,8 @@ def clear_simulation_data() -> bool:
     Returns:
         True if all deletions succeeded, False otherwise.
     """
+    if not _check_db():
+        return True
     try:
         total_deleted = 0
 

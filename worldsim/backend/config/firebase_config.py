@@ -83,25 +83,28 @@ def initialize_firebase() -> firestore.Client:
             )
 
         except FileNotFoundError:
-            logger.error(
+            logger.warning(
                 "Service account file not found at '%s'. "
+                "Running WITHOUT Firestore — writes will be skipped. "
                 "Set GOOGLE_APPLICATION_CREDENTIALS in your .env file "
                 "or place serviceAccountKey.json in backend/config/.",
                 SERVICE_ACCOUNT_PATH,
             )
-            raise
+            return None
 
         except ValueError as exc:
-            logger.error(
-                "Invalid service account credentials file: %s", exc
+            logger.warning(
+                "Invalid service account credentials file: %s. "
+                "Running WITHOUT Firestore.", exc
             )
-            raise
+            return None
 
         except Exception as exc:
-            logger.error(
-                "Unexpected error during Firebase initialization: %s", exc
+            logger.warning(
+                "Firebase initialization failed: %s. "
+                "Running WITHOUT Firestore.", exc
             )
-            raise
+            return None
 
     # Return a Firestore client bound to the initialized app
     return firestore.client()
@@ -112,6 +115,7 @@ def initialize_firebase() -> firestore.Client:
 # ---------------------------------------------------------------------------
 # Any module can import `db` directly:
 #   from config.firebase_config import db
+# db will be None if credentials are missing — all writes become no-ops.
 # ---------------------------------------------------------------------------
 
 db = initialize_firebase()

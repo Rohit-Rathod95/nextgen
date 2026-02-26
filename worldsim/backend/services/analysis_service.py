@@ -617,6 +617,14 @@ def run_analysis() -> bool:
     insights = generate_key_insights(collapses, alliances, dominant, logs)
 
     # Step 4: Write to Firestore with EXACT frontend field names
+    if db is None:
+        logger.info(
+            "run_analysis: Firestore not available — analysis generated "
+            "but not persisted (%d insights, dominant=%s).",
+            len(insights), dominant,
+        )
+        return True
+
     try:
         data = {
             "key_insights": insights,
