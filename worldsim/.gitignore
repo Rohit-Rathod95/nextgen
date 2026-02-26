@@ -1,0 +1,1 @@
+# Git ignore rules — excludes node_modules, __pycache__, .env, Firebase keys, and build artifacts.

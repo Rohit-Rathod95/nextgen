@@ -1,0 +1,1 @@
+# Python dependencies — FastAPI, Uvicorn, Firebase Admin SDK, and simulation utilities.
