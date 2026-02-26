@@ -1,1 +1,5 @@
-# Python dependencies — FastAPI, Uvicorn, Firebase Admin SDK, and simulation utilities.
+# Python dependencies for WorldSim backend
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+firebase-admin>=6.2.0
+python-dotenv>=1.0.0

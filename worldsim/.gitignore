@@ -1,1 +1,36 @@
-# Git ignore rules — excludes node_modules, __pycache__, .env, Firebase keys, and build artifacts.
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+frontend/dist/
+frontend/build/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+backend/config/serviceAccountKey.json
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing & misc
+coverage/
+.cache/

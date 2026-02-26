@@ -1,1 +1,137 @@
-# Firebase configuration — initializes Firebase Admin SDK with service account credentials.
+"""
+firebase_config.py - Firebase Admin SDK Initialization for WorldSim
+
+Initializes the Firebase Admin SDK with service account credentials
+and exposes a module-level Firestore client (`db`) for use across
+the backend. Any module can import the client directly:
+
+    from config.firebase_config import db
+
+The initialization is idempotent - calling initialize_firebase()
+multiple times will not create duplicate Firebase app instances.
+"""
+
+import os
+import logging
+
+import firebase_admin
+from firebase_admin import credentials, firestore
+from dotenv import load_dotenv
+
+# ---------------------------------------------------------------------------
+# Load environment variables from .env file
+# ---------------------------------------------------------------------------
+
+load_dotenv()
+
+# ---------------------------------------------------------------------------
+# Configuration Constants
+# ---------------------------------------------------------------------------
+
+SERVICE_ACCOUNT_PATH = os.getenv(
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "backend/config/serviceAccountKey.json"
+)
+
+PROJECT_ID = os.getenv(
+    "FIREBASE_PROJECT_ID",
+    "worldsim-hackathon"
+)
+
+# ---------------------------------------------------------------------------
+# Logger
+# ---------------------------------------------------------------------------
+
+logger = logging.getLogger("firebase_config")
+
+
+# ---------------------------------------------------------------------------
+# Initialization
+# ---------------------------------------------------------------------------
+
+def initialize_firebase() -> firestore.Client:
+    """
+    Initialize the Firebase Admin SDK and return a Firestore client.
+
+    Uses service account credentials from the path specified by the
+    GOOGLE_APPLICATION_CREDENTIALS environment variable (or the
+    default fallback path). Safe to call multiple times - subsequent
+    calls return the existing Firestore client without re-initializing.
+
+    Returns:
+        firestore.Client: Authenticated Firestore database client.
+
+    Raises:
+        SystemExit: If initialization fails due to missing or invalid
+                    credentials. The error is logged before exit.
+    """
+    try:
+        # Check if a Firebase app is already initialized
+        firebase_admin.get_app()
+        logger.info("Firebase app already initialized, reusing existing instance.")
+
+    except ValueError:
+        # No app exists yet - initialize a new one
+        try:
+            cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+            firebase_admin.initialize_app(cred, {
+                "projectId": PROJECT_ID,
+            })
+            logger.info(
+                "Firebase Admin SDK initialized successfully "
+                "(project: %s).", PROJECT_ID
+            )
+
+        except FileNotFoundError:
+            logger.error(
+                "Service account file not found at '%s'. "
+                "Set GOOGLE_APPLICATION_CREDENTIALS in your .env file "
+                "or place serviceAccountKey.json in backend/config/.",
+                SERVICE_ACCOUNT_PATH,
+            )
+            raise
+
+        except ValueError as exc:
+            logger.error(
+                "Invalid service account credentials file: %s", exc
+            )
+            raise
+
+        except Exception as exc:
+            logger.error(
+                "Unexpected error during Firebase initialization: %s", exc
+            )
+            raise
+
+    # Return a Firestore client bound to the initialized app
+    return firestore.client()
+
+
+# ---------------------------------------------------------------------------
+# Module-level Firestore client
+# ---------------------------------------------------------------------------
+# Any module can import `db` directly:
+#   from config.firebase_config import db
+# ---------------------------------------------------------------------------
+
+db = initialize_firebase()
+
+
+# ---------------------------------------------------------------------------
+# Connection Test
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+
+    print("Testing Firebase connection...")
+    test_db = initialize_firebase()
+
+    # Write a test document to verify connectivity
+    test_db.collection("test").document("connection").set({
+        "status": "connected",
+        "timestamp": firestore.SERVER_TIMESTAMP,
+    })
+    print("Firebase connection successful")
+    print(f"Project: {PROJECT_ID}")
+    print("Check Firestore console -> 'test' collection -> 'connection' document")
