@@ -1,115 +1,493 @@
 """
-region.py
+region.py — Region Model for WorldSim
 
-Defines the Region class, its attributes, and local simulation behaviors.
+Defines each region's resource state, population, strategy weights,
+trust scores, and per-cycle behaviors (consumption, climate, health).
+
+Every region serializes to a FLAT dictionary via to_dict() matching
+exactly what the frontend expects — no nested objects for weights
+or trust scores.
+
+All region IDs are strictly lowercase.
 """
 
-from typing import Dict, List
-from backend.config.regions_config import (
-    CONSUMPTION_RATE, MIN_RESOURCE, MAX_RESOURCE
+from config.regions_config import (
+    REGIONS, RESOURCES, CRITICAL_THRESHOLD,
+    EMERGENCY_THRESHOLD, COLLAPSE_THRESHOLD,
+    CONSUMPTION_RATES, INITIAL_TRUST, INITIAL_WEIGHT,
 )
+
+
+# ===========================================================================
+# Region Class
+# ===========================================================================
 
 class Region:
     """
-    Represents a region in the simulation with resources, population, and inter-region trust.
+    Represents a single region in the WorldSim simulation.
+
+    Tracks 4 resources (water, food, energy, land), population,
+    strategy weights, trust scores toward other regions, and
+    health status. Provides serialization to flat dict for Firestore.
     """
-    def __init__(self, name: str, water: float, food: float, energy: float, land: float, population: float, other_region_names: List[str]):
+
+    def __init__(self, region_id: str, water: float, food: float,
+                 energy: float, land: float, population: float):
         """
-        Initializes a region's state.
-        
+        Initialize a region with starting resource values.
+
         Args:
-            name: The name of the region.
-            water: Initial water level.
-            food: Initial food level.
-            energy: Initial energy level.
-            land: Land metric.
-            population: Region's population size.
-            other_region_names: List of all other region names to initialize trust_scores.
+            region_id:  Lowercase region identifier (e.g. "aquaria").
+            water:      Starting water level (0–100 scale).
+            food:       Starting food level (0–100 scale).
+            energy:     Starting energy level (0–100 scale).
+            land:       Starting land level (0–100 scale).
+            population: Starting population count.
         """
-        self.name = name
+        self.region_id = region_id
+
+        # Resources (0–100 scale)
         self.water = float(water)
         self.food = float(food)
         self.energy = float(energy)
         self.land = float(land)
-        self.population = float(max(0.0, population))
-        
-        self.trust_scores: Dict[str, float] = {}
-        for r_name in other_region_names:
-            if r_name != self.name:
-                self.trust_scores[r_name] = 0.5
 
-    def _clamp_resource(self, value: float) -> float:
-        """Helper to clamp resource values between config MIN and MAX."""
-        return max(MIN_RESOURCE, min(MAX_RESOURCE, value))
+        # Population
+        self.population = float(population)
 
-    def consume_resources(self):
-        """
-        Calculates consumption based on population, subtracts from resources,
-        and triggers population adjustment based on resource availability.
-        """
-        consumption = self.population * CONSUMPTION_RATE
-        
-        self.water -= consumption
-        self.food -= consumption
-        self.energy -= consumption
-        
-        self.adjust_population()
-        
-        # Resources must be clamped between 0 and 200 after consumption
-        self.water = self._clamp_resource(self.water)
-        self.food = self._clamp_resource(self.food)
-        self.energy = self._clamp_resource(self.energy)
+        # Health
+        self.health_score = 100.0
 
-    def adjust_population(self):
-        """
-        Adjusts population per simulation rules:
-        If any resource < 0: population decreases by 5%
-        Else: population increases by 2%
-        """
-        if self.water < 0 or self.food < 0 or self.energy < 0:
-            self.population *= 0.95  # decrease by 5%
-        else:
-            self.population *= 1.02  # increase by 2%
-            
-        self.population = max(0.0, self.population)
+        # Per-region consumption rates from config
+        self.consumption_rates = CONSUMPTION_RATES[region_id]
 
-    def apply_climate(self, event_type: str):
+        # History for replay
+        self.history = []
+
+        # Current cycle counter
+        self.cycle = 0
+
+        # Strategy weights — stored ON the region for Firestore
+        self.strategy_weights = {
+            "trade": INITIAL_WEIGHT,
+            "hoard": INITIAL_WEIGHT,
+            "invest": INITIAL_WEIGHT,
+            "aggress": INITIAL_WEIGHT,
+        }
+
+        # Trust scores toward every OTHER region (0–100 scale)
+        self.trust_scores = {
+            r: INITIAL_TRUST for r in REGIONS if r != region_id
+        }
+
+        # Action tracking
+        self.last_action = "none"
+        self.strategy_label = "Balanced"
+        self.last_reward = 0.0
+
+        # Status flags
+        self.is_collapsed = False
+        self.trade_open = True
+
+    # -----------------------------------------------------------------------
+    # METHOD 1 — Consume Resources
+    # -----------------------------------------------------------------------
+
+    def consume(self):
         """
-        Applies a climate event altering the region's resources.
-        
+        Deplete resources based on per-region consumption rates
+        and current population. Larger populations drain faster.
+
+        Population decreases if resources are fully depleted:
+            - 2+ resources hit 0 → population × 0.95
+            - 1 resource hits 0  → population × 0.98
+            - Minimum population is always 10
+        """
+        drain_multiplier = self.population / 1000.0
+        depleted_count = 0
+
+        for resource in RESOURCES:
+            rate = self.consumption_rates.get(resource, 0.5)
+            drain = rate * drain_multiplier
+            current = getattr(self, resource)
+
+            # Check if this drain will fully deplete the resource
+            new_value = current - drain
+            if new_value <= 0 and current > 0:
+                depleted_count += 1
+
+            # Apply drain and clamp immediately (per resource)
+            setattr(self, resource, max(0.0, new_value))
+
+        # Population adjustment based on depletion
+        if depleted_count >= 2:
+            self.population *= 0.95
+        elif depleted_count == 1:
+            self.population *= 0.98
+
+        # Population floor
+        self.population = max(10.0, self.population)
+
+    # -----------------------------------------------------------------------
+    # METHOD 2 — Apply Climate Event
+    # -----------------------------------------------------------------------
+
+    def apply_climate(self, event_type: str) -> str:
+        """
+        Apply a climate event that reduces a specific resource.
+
+        Supported events:
+            "drought"        → water  -= 30% of current
+            "flood"          → food   -= 20% of current
+            "energy_crisis"  → energy -= 25% of current
+
         Args:
-            event_type: A string identifying the type of climate event.
+            event_type: One of "drought", "flood", "energy_crisis".
+
+        Returns:
+            The event_type string for logging.
         """
         if event_type == "drought":
-            self.water -= 20.0
+            self.water -= self.water * 0.30
         elif event_type == "flood":
-            self.land -= 10.0
-        elif event_type == "blizzard":
-            self.energy -= 15.0
-        elif event_type == "bountiful":
-            self.food += 20.0
-            
-        self.water = self._clamp_resource(self.water)
-        self.food = self._clamp_resource(self.food)
-        self.energy = self._clamp_resource(self.energy)
-        self.land = self._clamp_resource(self.land)
+            self.food -= self.food * 0.20
+        elif event_type == "energy_crisis":
+            self.energy -= self.energy * 0.25
+
+        # Clamp all resources to minimum 0
+        self.water = max(0.0, self.water)
+        self.food = max(0.0, self.food)
+        self.energy = max(0.0, self.energy)
+        self.land = max(0.0, self.land)
+
+        return event_type
+
+    # -----------------------------------------------------------------------
+    # METHOD 3 — Calculate Health Score
+    # -----------------------------------------------------------------------
 
     def calculate_health(self) -> float:
         """
-        Calculates the health of the region based on population ratio and resource balance.
+        Compute region health score (0–100) from resources,
+        population, and trade status.
+
         Formula:
-            population_ratio = population / 700
-            resource_balance = average(resource / 200)
-            health = (0.5 * population_ratio) + (0.5 * resource_balance)
-            
+            avg_resource = (water + food + energy + land) / 4
+            pop_factor   = min(population / 1000, 2.0) × 10
+            trade_bonus  = 5 if trade_open else 0
+            health       = avg_resource × 0.7 + pop_factor + trade_bonus
+
+        Triggers collapse if health drops to or below COLLAPSE_THRESHOLD.
+
         Returns:
-            The calculated health score.
+            Updated health_score.
         """
-        population_ratio = self.population / 700.0
-        
-        # Taking average of water, food, and energy for the resource balance
-        avg_resource = (self.water + self.food + self.energy) / 3.0
-        resource_balance = avg_resource / 200.0
-        
-        health = (0.5 * population_ratio) + (0.5 * resource_balance)
-        return health
+        avg_resource = (self.water + self.food + self.energy + self.land) / 4.0
+        pop_factor = min(self.population / 1000.0, 2.0) * 10.0
+        trade_bonus = 5.0 if self.trade_open else 0.0
+
+        health = (avg_resource * 0.7) + pop_factor + trade_bonus
+        health = min(100.0, max(0.0, health))
+
+        self.health_score = round(health, 2)
+
+        # Collapse detection
+        if self.health_score <= COLLAPSE_THRESHOLD:
+            self.is_collapsed = True
+
+        return self.health_score
+
+    # -----------------------------------------------------------------------
+    # METHOD 4 — Serialize to Flat Dictionary
+    # -----------------------------------------------------------------------
+
+    def to_dict(self) -> dict:
+        """
+        Return a complete FLAT dictionary for Firestore persistence.
+
+        Strategy weights are written as individual flat fields
+        (trade_weight, hoard_weight, etc.) — NOT as a nested dict.
+
+        Trust scores are written as individual flat fields
+        (trust_aquaria, trust_agrovia, etc.) — NOT as a nested dict.
+
+        This matches exactly what the frontend expects.
+
+        Returns:
+            Flat dictionary with all region fields.
+        """
+        return {
+            "region_id": self.region_id,
+            "water": round(self.water, 2),
+            "food": round(self.food, 2),
+            "energy": round(self.energy, 2),
+            "land": round(self.land, 2),
+            "population": round(self.population, 0),
+            "health_score": self.health_score,
+            "is_collapsed": self.is_collapsed,
+            "trade_open": self.trade_open,
+            "last_action": self.last_action,
+            "strategy_label": self.strategy_label,
+            "last_reward": self.last_reward,
+            "cycle": self.cycle,
+            # Flat strategy weights
+            "trade_weight": self.strategy_weights["trade"],
+            "hoard_weight": self.strategy_weights["hoard"],
+            "invest_weight": self.strategy_weights["invest"],
+            "aggress_weight": self.strategy_weights["aggress"],
+            # Flat trust scores
+            "trust_aquaria": self.trust_scores.get("aquaria", 50),
+            "trust_agrovia": self.trust_scores.get("agrovia", 50),
+            "trust_petrozon": self.trust_scores.get("petrozon", 50),
+            "trust_urbanex": self.trust_scores.get("urbanex", 50),
+            "trust_terranova": self.trust_scores.get("terranova", 50),
+        }
+
+    # -----------------------------------------------------------------------
+    # METHOD 5 — Log History
+    # -----------------------------------------------------------------------
+
+    def log_history(self):
+        """
+        Append a snapshot of the current state to the history list.
+        Called once per cycle after all updates complete.
+
+        Maximum 100 entries — oldest removed if exceeded.
+        """
+        self.history.append({
+            "cycle": self.cycle,
+            "water": round(self.water, 2),
+            "food": round(self.food, 2),
+            "energy": round(self.energy, 2),
+            "land": round(self.land, 2),
+            "population": round(self.population, 0),
+            "health_score": self.health_score,
+            "last_action": self.last_action,
+            "strategy_label": self.strategy_label,
+        })
+
+        # Cap at 100 entries
+        if len(self.history) > 100:
+            self.history = self.history[-100:]
+
+    # -----------------------------------------------------------------------
+    # METHOD 6 — Resource Status (for Agent Observation)
+    # -----------------------------------------------------------------------
+
+    def get_resource_status(self) -> dict:
+        """
+        Return a quick status dict for agent observation.
+
+        Returns:
+            Dictionary with lists of resource names by status:
+                critical  — below CRITICAL_THRESHOLD (30)
+                emergency — below EMERGENCY_THRESHOLD (20)
+                surplus   — above 70
+                deficit   — below 40
+        """
+        status = {
+            "critical": [],
+            "emergency": [],
+            "surplus": [],
+            "deficit": [],
+        }
+
+        for resource in RESOURCES:
+            level = getattr(self, resource, 0)
+
+            if level < EMERGENCY_THRESHOLD:
+                status["emergency"].append(resource)
+            if level < CRITICAL_THRESHOLD:
+                status["critical"].append(resource)
+            if level > 70:
+                status["surplus"].append(resource)
+            if level < 40:
+                status["deficit"].append(resource)
+
+        return status
+
+    # -----------------------------------------------------------------------
+    # METHOD 7 — Reset to Initial Values
+    # -----------------------------------------------------------------------
+
+    def reset(self, initial_data: dict):
+        """
+        Reset region to initial starting values for a new simulation run.
+        initial_data comes from regions_config.INITIAL_REGIONS[region_id].
+
+        Resets all resources, population, health, history, weights, trust.
+        Does NOT change region_id.
+
+        Args:
+            initial_data: Dictionary with water, food, energy, land, population.
+        """
+        self.water = float(initial_data["water"])
+        self.food = float(initial_data["food"])
+        self.energy = float(initial_data["energy"])
+        self.land = float(initial_data["land"])
+        self.population = float(initial_data["population"])
+
+        self.health_score = 100.0
+        self.history = []
+        self.cycle = 0
+
+        self.strategy_weights = {
+            "trade": INITIAL_WEIGHT,
+            "hoard": INITIAL_WEIGHT,
+            "invest": INITIAL_WEIGHT,
+            "aggress": INITIAL_WEIGHT,
+        }
+
+        self.trust_scores = {
+            r: INITIAL_TRUST for r in REGIONS if r != self.region_id
+        }
+
+        self.last_action = "none"
+        self.strategy_label = "Balanced"
+        self.last_reward = 0.0
+        self.is_collapsed = False
+        self.trade_open = True
+
+
+# ===========================================================================
+# Test Cases
+# ===========================================================================
+
+if __name__ == "__main__":
+
+    PASS = "[PASS]"
+    FAIL = "[FAIL]"
+
+    # ===================================================================
+    # TEST 1 — Consumption Over 5 Cycles
+    # ===================================================================
+    print("=" * 60)
+    print("  TEST 1 - Consumption Over 5 Cycles (Aquaria)")
+    print("=" * 60)
+
+    r = Region("aquaria", water=90, food=60, energy=30, land=70, population=500)
+    print(f"  Initial: W={r.water:.1f} F={r.food:.1f} E={r.energy:.1f} L={r.land:.1f} P={r.population:.0f}")
+
+    for i in range(1, 6):
+        r.consume()
+        print(f"  Cycle {i}: W={r.water:.1f} F={r.food:.1f} E={r.energy:.1f} L={r.land:.1f} P={r.population:.0f}")
+
+    # Water should deplete fastest (rate 0.8 vs others)
+    water_drop = 90 - r.water
+    food_drop = 60 - r.food
+    result = PASS if water_drop > food_drop else FAIL
+    print(f"  Water depleted fastest? {result} (W dropped {water_drop:.1f} vs F dropped {food_drop:.1f})")
+    print()
+
+    # ===================================================================
+    # TEST 2 — Climate Events
+    # ===================================================================
+    print("=" * 60)
+    print("  TEST 2 - Climate Events")
+    print("=" * 60)
+
+    r2 = Region("petrozon", water=30, food=35, energy=95, land=60, population=450)
+
+    # Drought
+    before_w = r2.water
+    r2.apply_climate("drought")
+    print(f"  Drought: water {before_w:.1f} -> {r2.water:.1f} (lost {before_w - r2.water:.1f})")
+
+    # Flood
+    before_f = r2.food
+    r2.apply_climate("flood")
+    print(f"  Flood: food {before_f:.1f} -> {r2.food:.1f} (lost {before_f - r2.food:.1f})")
+
+    # Energy crisis (NOT blizzard)
+    before_e = r2.energy
+    r2.apply_climate("energy_crisis")
+    print(f"  Energy crisis: energy {before_e:.1f} -> {r2.energy:.1f} (lost {before_e - r2.energy:.1f})")
+
+    # Confirm blizzard does nothing
+    before_all = (r2.water, r2.food, r2.energy, r2.land)
+    r2.apply_climate("blizzard")
+    after_all = (r2.water, r2.food, r2.energy, r2.land)
+    blizzard_noop = before_all == after_all
+    print(f"  'blizzard' is no-op? {PASS if blizzard_noop else FAIL}")
+    print()
+
+    # ===================================================================
+    # TEST 3 — to_dict() Flat Structure
+    # ===================================================================
+    print("=" * 60)
+    print("  TEST 3 - to_dict() Flat Structure (Petrozon)")
+    print("=" * 60)
+
+    r3 = Region("petrozon", water=30, food=35, energy=95, land=60, population=450)
+    d = r3.to_dict()
+
+    # Check all required keys exist
+    required_keys = [
+        "region_id", "water", "food", "energy", "land", "population",
+        "health_score", "is_collapsed", "trade_open", "last_action",
+        "strategy_label", "last_reward", "cycle",
+        "trade_weight", "hoard_weight", "invest_weight", "aggress_weight",
+        "trust_aquaria", "trust_agrovia", "trust_urbanex", "trust_terranova",
+    ]
+
+    missing = [k for k in required_keys if k not in d]
+    print(f"  Keys present: {len(d)}")
+    print(f"  Missing keys: {missing if missing else 'None'}")
+    print(f"  All required keys? {PASS if not missing else FAIL}")
+
+    # Confirm flat (no nested dicts)
+    nested = [k for k, v in d.items() if isinstance(v, dict)]
+    print(f"  Nested dicts found: {nested if nested else 'None'}")
+    print(f"  Flat structure? {PASS if not nested else FAIL}")
+
+    # Print full dict
+    for k, v in d.items():
+        print(f"    {k}: {v}")
+    print()
+
+    # ===================================================================
+    # TEST 4 — Collapse Detection
+    # ===================================================================
+    print("=" * 60)
+    print("  TEST 4 - Collapse Detection")
+    print("=" * 60)
+
+    r4 = Region("urbanex", water=40, food=45, energy=40, land=30, population=950)
+    r4.water = 5
+    r4.food = 5
+    r4.energy = 5
+    r4.land = 5
+    r4.population = 50
+
+    health = r4.calculate_health()
+    print(f"  Health after setting all resources to 5: {health}")
+    print(f"  is_collapsed? {PASS if r4.is_collapsed else FAIL}")
+    print()
+
+    # ===================================================================
+    # TEST 5 — History Logging
+    # ===================================================================
+    print("=" * 60)
+    print("  TEST 5 - History Logging (5 cycles)")
+    print("=" * 60)
+
+    r5 = Region("terranova", water=55, food=60, energy=55, land=90, population=400)
+
+    for cycle in range(1, 6):
+        r5.cycle = cycle
+        r5.consume()
+        r5.calculate_health()
+        r5.log_history()
+
+    print(f"  History entries: {len(r5.history)}")
+    print(f"  5 entries? {PASS if len(r5.history) == 5 else FAIL}")
+
+    for entry in r5.history:
+        print(f"    Cycle {entry['cycle']}: W={entry['water']:.1f} F={entry['food']:.1f} "
+              f"E={entry['energy']:.1f} HP={entry['health_score']}")
+    print()
+
+    # ===================================================================
+    print("=" * 60)
+    print("  All Region tests complete")
+    print("=" * 60)
