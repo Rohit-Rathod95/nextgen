@@ -41,20 +41,20 @@ INITIAL_WEIGHT = 0.25  # Starting weight for each of 4 strategies
 # ---------------------------------------------------------------------------
 
 CYCLE_SPEED = 1.0
-TOTAL_CYCLES = 20
-CLIMATE_EVENT_PROBABILITY = 0.30   # 30% chance per cycle (higher to force more climate events)
+TOTAL_CYCLES = 20  # shortened demo to 20 cycles (1 cycle = 1 year)
+CLIMATE_EVENT_PROBABILITY = 0.50   # 50% chance per region per cycle (very frequent climate drama)
 
 # ---------------------------------------------------------------------------
 # Population Dynamics (in region.py, not here — kept for cross-module ref)
 # ---------------------------------------------------------------------------
 
-POPULATION_GROWTH_RATE       = 0.02
-POPULATION_DECLINE_RATE      = 0.03
-POPULATION_COLLAPSE_RATE     = 0.10
+POPULATION_GROWTH_RATE       = 0.05   # +5% per year when thriving
+POPULATION_DECLINE_RATE      = 0.08   # -8% when under stress
+POPULATION_COLLAPSE_RATE     = 0.20   # -20% rapid collapse
 POPULATION_MIN               = 50
-THRIVING_THRESHOLD           = 60    # avg resources > this -> grow
-STRESS_THRESHOLD             = 30    # avg resources < this -> decline
-COLLAPSE_RESOURCE_THRESHOLD  = 15    # avg resources < this -> collapse rate
+THRIVING_THRESHOLD           = 55    # easier to trigger growth
+STRESS_THRESHOLD             = 35    # stress kicks in earlier
+COLLAPSE_RESOURCE_THRESHOLD  = 18    # slightly higher collapse trigger
 
 # ---------------------------------------------------------------------------
 # Starting Values — tuned so every region has a clear surplus + deficit
@@ -62,28 +62,38 @@ COLLAPSE_RESOURCE_THRESHOLD  = 15    # avg resources < this -> collapse rate
 
 INITIAL_REGIONS = {
     "aquaria": {
-        # Brazil: water-rich, energy-poor -> strong pull towards Petrozon trade
-        "water": 80, "food": 50, "energy": 25, "land": 60,
+        "water": 70,
+        "food": 40,
+        "energy": 20,
+        "land": 55,
         "population": 500,
     },
     "agrovia": {
-        # India: food-rich, land-hungry, energy deficit
-        "water": 40, "food": 85, "energy": 35, "land": 35,
+        "water": 35,
+        "food": 75,
+        "energy": 30,
+        "land": 30,
         "population": 600,
     },
     "petrozon": {
-        # Gulf States: energy-rich, water/food critical -> must trade or collapse
-        "water": 25, "food": 30, "energy": 85, "land": 50,
+        "water": 20,
+        "food": 25,
+        "energy": 80,
+        "land": 45,
         "population": 450,
     },
     "urbanex": {
-        # China: high pop, moderate resources, manufacturing leverage
-        "water": 35, "food": 40, "energy": 35, "land": 25,
+        "water": 30,
+        "food": 35,
+        "energy": 30,
+        "land": 20,
         "population": 950,
     },
     "terranova": {
-        # Africa: land-rich, developing, balanced but plenty of room to grow
-        "water": 50, "food": 55, "energy": 50, "land": 80,
+        "water": 45,
+        "food": 50,
+        "energy": 45,
+        "land": 75,
         "population": 400,
     },
 }
@@ -94,11 +104,36 @@ INITIAL_REGIONS = {
 # ---------------------------------------------------------------------------
 
 CONSUMPTION_RATES = {
-    "aquaria":   {"water": 1.4, "food": 1.0, "energy": 0.7, "land": 0.2},
-    "agrovia":   {"water": 1.1, "food": 1.6, "energy": 0.8, "land": 0.5},
-    "petrozon":  {"water": 0.9, "food": 0.8, "energy": 1.8, "land": 0.3},
-    "urbanex":   {"water": 1.8, "food": 1.7, "energy": 1.5, "land": 0.9},
-    "terranova": {"water": 0.9, "food": 1.0, "energy": 0.8, "land": 0.3},
+    "aquaria": {
+        "water": 2.5,
+        "food": 1.8,
+        "energy": 1.2,
+        "land": 0.5,
+    },
+    "agrovia": {
+        "water": 2.0,
+        "food": 3.0,
+        "energy": 1.5,
+        "land": 1.0,
+    },
+    "petrozon": {
+        "water": 1.8,
+        "food": 1.5,
+        "energy": 3.5,
+        "land": 0.8,
+    },
+    "urbanex": {
+        "water": 3.5,
+        "food": 3.5,
+        "energy": 3.0,
+        "land": 2.0,
+    },
+    "terranova": {
+        "water": 1.5,
+        "food": 2.0,
+        "energy": 1.5,
+        "land": 0.8,
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -107,43 +142,32 @@ CONSUMPTION_RATES = {
 
 SPECIAL_ABILITIES = {
     "aquaria": {
-        # Amazon basin: continuous water cycle replenishment
         "ability": "water_regeneration",
         "resource": "water",
-        "regen_rate": 3.0,
-        "description": "Amazon basin natural water cycle",
+        "regen_rate": 5.0,
     },
     "agrovia": {
-        # Monsoon agriculture: food regenerates if enough land cultivated
         "ability": "food_regeneration",
         "resource": "food",
-        "regen_rate": 3.0,
+        "regen_rate": 6.0,
         "land_threshold": 25,
-        "description": "Monsoon agricultural cycle",
     },
     "petrozon": {
-        # Vast oil reserves: passive energy extraction each cycle
         "ability": "energy_regeneration",
         "resource": "energy",
-        "regen_rate": 2.5,
-        "description": "Vast oil reserve base",
+        "regen_rate": 5.0,
     },
     "urbanex": {
-        # China's manufacturing economy: trade without resource surplus
         "ability": "manufacturing_power",
         "initial_value": 85,
-        "regen_rate": 1.0,          # manufacturing rebuilds 1/cycle when not trading
         "trade_trust_bonus": 15,
         "trade_amount_bonus": 5,
-        "invest_improvement": 3,
-        "description": "Manufacturing export economy",
+        "regen_rate": 2.0,
     },
     "terranova": {
-        # Undeveloped land: invest yields multiplied returns
         "ability": "land_development",
-        "invest_multiplier": 2.0,
-        "regen_rate": 1.5,          # passive land improvement from development
-        "description": "Undeveloped land potential",
+        "invest_multiplier": 2.5,
+        "regen_rate": 3.0,
     },
 }
 
@@ -177,15 +201,40 @@ ADJACENT_PAIRS = {
 # ---------------------------------------------------------------------------
 
 WEIGHT_UPDATE_RULES = {
-    "trade_success":        {"trade":  0.08, "aggress": -0.03},
-    "trade_rejected":       {"trade": -0.06, "hoard":   0.05},
-    "hoard_success":        {"hoard":  0.07, "invest":  -0.03},
-    "hoard_hurt":           {"hoard": -0.07, "trade":   0.04},
-    "invest_payoff":        {"invest": 0.08, "hoard":  -0.02},
-    "aggress_success":      {"aggress": 0.08, "trade":  -0.05},
-    "aggress_failed":       {"aggress": -0.10, "hoard":  0.05},
-    "emergency_hoard":      {"hoard":  0.12, "aggress": 0.03,
-                             "invest": -0.08, "trade":  -0.07},
+    "trade_success": {
+        "trade": 0.15,
+        "aggress": -0.05
+    },
+    "trade_rejected": {
+        "trade": -0.12,
+        "hoard": 0.10
+    },
+    "hoard_success": {
+        "hoard": 0.14,
+        "invest": -0.05
+    },
+    "hoard_hurt": {
+        "hoard": -0.14,
+        "trade": 0.08
+    },
+    "invest_payoff": {
+        "invest": 0.15,
+        "hoard": -0.04
+    },
+    "aggress_success": {
+        "aggress": 0.15,
+        "trade": -0.08
+    },
+    "aggress_failed": {
+        "aggress": -0.18,
+        "hoard": 0.10
+    },
+    "emergency_hoard": {
+        "hoard": 0.20,
+        "aggress": 0.05,
+        "invest": -0.12,
+        "trade": -0.13
+    }
 }
 
 # ---------------------------------------------------------------------------

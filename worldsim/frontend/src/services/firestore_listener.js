@@ -98,6 +98,9 @@ function normalizeRegion(raw) {
         name,
         strategy_weights,
         trust,
+        // Population metadata
+        population_trend: raw.population_trend || 'stable',
+        population_history: raw.population_history || [],
         // Ensure resource fields are numbers
         water: Number(raw.water ?? 0),
         food: Number(raw.food ?? 0),

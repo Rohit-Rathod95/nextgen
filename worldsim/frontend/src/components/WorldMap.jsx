@@ -365,10 +365,23 @@ export default function WorldMap({ regions, activeTrades, onRegionSelect, select
                                         </text>
                                     )}
 
-                                    {/* Population */}
+                                    {/* Population with trend */}
                                     <text dx={cfg.labelDx} dy={cfg.labelDy + 15} textAnchor={cfg.anchor}
                                         style={{ fontFamily: 'monospace', fontSize: 8.5, fill: isSelected ? '#ffffff' : 'rgba(255,255,255,0.55)', textShadow: '0 0 6px #060d1a', pointerEvents: 'none', userSelect: 'none' }}>
-                                        {`👥 ${Math.round(pop)}`}
+                                        {(() => {
+                                            const trend = region?.population_trend;
+                                            const delta = region?.population_change;
+                                            let arrow = '';
+                                            let color = isSelected ? '#ffffff' : 'rgba(255,255,255,0.55)';
+                                            if (trend === 'growing') {
+                                                arrow = '↑ ';
+                                                color = '#4ade80';
+                                            } else if (trend === 'declining') {
+                                                arrow = '↓ ';
+                                                color = '#ef4444';
+                                            }
+                                            return <tspan fill={color}>{`${arrow}${Math.round(pop)}`}</tspan>;
+                                        })()}
                                     </text>
                                 </g>
                             </Marker>

@@ -46,6 +46,10 @@ class Region:
         self.population_change       = 0.0
         self.population_change_ratio = 0.0
 
+        # population trend history (last 3 cycles) and current trend label
+        self.population_history = []
+        self.population_trend = "stable"
+
         # Health & status
         self.health_score  = 100.0
         self.is_collapsed  = False
@@ -127,29 +131,57 @@ class Region:
         Stressed  (15-30):    -3%/cycle
         Collapsing (< 15):   -10%/cycle
         """
-        avg = (self.water + self.food + self.energy + self.land) / 4.0
+        avg = (
+            self.water + self.food +
+            self.energy + self.land
+        ) / 4.0
 
         if avg > THRIVING_THRESHOLD:
-            rate = POPULATION_GROWTH_RATE
+            rate = POPULATION_GROWTH_RATE    # +5%
         elif avg > STRESS_THRESHOLD:
-            rate = 0.0
+            rate = 0.01                      # +1% stable
         elif avg > COLLAPSE_RESOURCE_THRESHOLD:
-            rate = -POPULATION_DECLINE_RATE
+            rate = -POPULATION_DECLINE_RATE  # -8%
         else:
-            rate = -POPULATION_COLLAPSE_RATE
+            rate = -POPULATION_COLLAPSE_RATE # -20%
 
         old_pop = self.population
-        max_pop = self.starting_population * 3.0
-        self.population = max(
-            float(POPULATION_MIN),
-            min(self.population * (1.0 + rate), max_pop)
-        )
-        self.population = round(self.population)
 
-        self.population_change = self.population - old_pop
-        self.population_change_ratio = (
-            self.population_change / old_pop if old_pop > 0 else 0.0
+        new_pop = self.population * (1.0 + rate)
+
+        max_pop = self.starting_population * 2.5
+        new_pop = max(
+            float(POPULATION_MIN),
+            min(new_pop, max_pop)
         )
+
+        self.population = round(new_pop)
+
+        self.population_change = (
+            self.population - old_pop)
+
+        self.population_change_ratio = (
+            self.population_change / old_pop
+            if old_pop > 0 else 0.0
+        )
+
+        # track last three populations for simple trend detection
+        self.population_history.append(
+            self.population)
+        if len(self.population_history) > 3:
+            self.population_history.pop(0)
+
+        if len(self.population_history) >= 3:
+            if (self.population_history[-1] >
+                self.population_history[0] * 1.02):
+                self.population_trend = "growing"
+            elif (self.population_history[-1] 
+                  < self.population_history[0] * 0.98):
+                self.population_trend = "declining"
+            else:
+                self.population_trend = "stable"
+
+        return self.population_change
 
     # -----------------------------------------------------------------------
     # METHOD: apply_special_ability
@@ -236,18 +268,53 @@ class Region:
         Urbanex collapse guard: never collapses if manufacturing_power > 25.
         Standard collapse: health <= COLLAPSE_THRESHOLD AND population <= COLLAPSE_POPULATION.
         """
-        avg = (self.water + self.food + self.energy + self.land) / 4.0
+        avg = (
+            self.water + self.food +
+            self.energy + self.land
+        ) / 4.0
 
-        # Population factor: growth bonus when resources OK, penalty under stress
+        resource_score = avg * 0.6
+
+        pop_ratio = (self.population /
+            self.starting_population)
+
         if avg > STRESS_THRESHOLD:
-            pop_factor = min(
-                self.population / self.starting_population, 2.0
-            ) * 10.0
+            if pop_ratio > 1.5:
+                pop_score = 8.0
+            elif pop_ratio > 1.0:
+                pop_score = 12.0
+            else:
+                pop_score = pop_ratio * 12.0
         else:
-            pop_factor = max(
-                0.0,
-                10.0 - (self.population / self.starting_population * 5.0)
-            )
+            if pop_ratio > 1.2:
+                pop_score = max(0.0,
+                    5.0 - (pop_ratio - 1.0) * 10)
+            else:
+                pop_score = pop_ratio * 8.0
+
+        manufacturing_bonus = 0.0
+        if self.region_id == "urbanex":
+            manufacturing_bonus = (
+                self.manufacturing_power / 100.0
+            ) * 15.0
+
+        trade_bonus = 4.0 if self.trade_open else 0.0
+
+        health = (resource_score + pop_score +
+                  trade_bonus + manufacturing_bonus)
+
+        self.health_score = round(
+            min(100.0, max(0.0, health)), 2)
+
+        if (self.health_score <= COLLAPSE_THRESHOLD
+            and self.population <= COLLAPSE_POPULATION):
+            if not (
+                self.region_id == "urbanex"
+                and self.manufacturing_power > 20
+            ):
+                self.is_collapsed = True
+
+        return self.health_score
 
         # Urbanex manufacturing bonus: up to +15 health from mfg power
         manufacturing_bonus = 0.0
@@ -318,6 +385,8 @@ class Region:
             "cycle":                  self.cycle,
             "population_change":      round(self.population_change, 2),
             "population_change_ratio": round(self.population_change_ratio, 4),
+            "population_trend":        self.population_trend,
+            "population_history":     list(self.population_history),
             # Flat strategy weights
             "trade_weight":   round(self.strategy_weights["trade"],   4),
             "hoard_weight":   round(self.strategy_weights["hoard"],   4),

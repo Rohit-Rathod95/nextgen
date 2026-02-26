@@ -83,15 +83,33 @@ def get_valid_partners(sender, all_regions: list) -> list:
 # FUNCTION 4 — Propose Trade
 # ===========================================================================
 
-def propose_trade(sender, receiver) -> str:
+def propose_trade(sender, receiver) -> dict:
     """
     Propose a trade between sender and receiver.
 
     Standard trade: sender offers surplus, gets deficit resource.
     Urbanex manufacturing: offers manufacturing capacity, receives needed resource.
 
-    Returns outcome string.
+    Returns outcome string and full trade event dict with before/after snapshots.
     """
+    # ── Capture old trust values BEFORE trade ──────────────────────────────
+    old_sender_trust = sender.trust_scores.get(receiver.region_id, 50)
+    old_receiver_trust = receiver.trust_scores.get(sender.region_id, 50)
+
+    # ── Capture resource snapshots BEFORE trade ────────────────────────────
+    sender_before = {
+        "water": round(sender.water, 2),
+        "food": round(sender.food, 2),
+        "energy": round(sender.energy, 2),
+        "land": round(sender.land, 2)
+    }
+    receiver_before = {
+        "water": round(receiver.water, 2),
+        "food": round(receiver.food, 2),
+        "energy": round(receiver.energy, 2),
+        "land": round(receiver.land, 2)
+    }
+
     wanted = find_deficit_resource(sender)
 
     # ── Urbanex manufacturing path ──────────────────────────────────────────
@@ -99,18 +117,70 @@ def propose_trade(sender, receiver) -> str:
     if is_urbanex:
         mfg = getattr(sender, "manufacturing_power", 0)
         if mfg < 10:
-            return "trade_skipped_no_capacity"
+            return ("trade_skipped_no_capacity", {
+                "type": "trade",
+                "source_region": sender.region_id,
+                "target_region": receiver.region_id,
+                "outcome": "trade_skipped_no_capacity",
+                "rejection_reason": "trade_skipped_no_capacity",
+                "sender_before": sender_before,
+                "trust_before": {
+                    "sender_toward_receiver": old_sender_trust
+                },
+                "trust_after": {
+                    "sender_toward_receiver": round(sender.trust_scores.get(receiver.region_id, 50), 1)
+                }
+            })
         if wanted is None:
-            return "trade_skipped_no_deficit"
+            return ("trade_skipped_no_deficit", {
+                "type": "trade",
+                "source_region": sender.region_id,
+                "target_region": receiver.region_id,
+                "outcome": "trade_skipped_no_deficit",
+                "rejection_reason": "trade_skipped_no_deficit",
+                "sender_before": sender_before,
+                "trust_before": {
+                    "sender_toward_receiver": old_sender_trust
+                },
+                "trust_after": {
+                    "sender_toward_receiver": round(sender.trust_scores.get(receiver.region_id, 50), 1)
+                }
+            })
         trust_required = max(15, TRADE_TRUST_MINIMUM - 15)   # lower bar
         transfer       = URBANEX_AMOUNT
     else:
         # ── Standard path ────────────────────────────────────────────────────
         if wanted is None:
-            return "trade_skipped_no_deficit"
+            return ("trade_skipped_no_deficit", {
+                "type": "trade",
+                "source_region": sender.region_id,
+                "target_region": receiver.region_id,
+                "outcome": "trade_skipped_no_deficit",
+                "rejection_reason": "trade_skipped_no_deficit",
+                "sender_before": sender_before,
+                "trust_before": {
+                    "sender_toward_receiver": old_sender_trust
+                },
+                "trust_after": {
+                    "sender_toward_receiver": round(sender.trust_scores.get(receiver.region_id, 50), 1)
+                }
+            })
         offered = find_surplus_resource(sender)
         if offered is None:
-            return "trade_skipped_no_surplus"
+            return ("trade_skipped_no_surplus", {
+                "type": "trade",
+                "source_region": sender.region_id,
+                "target_region": receiver.region_id,
+                "outcome": "trade_skipped_no_surplus",
+                "rejection_reason": "trade_skipped_no_surplus",
+                "sender_before": sender_before,
+                "trust_before": {
+                    "sender_toward_receiver": old_sender_trust
+                },
+                "trust_after": {
+                    "sender_toward_receiver": round(sender.trust_scores.get(receiver.region_id, 50), 1)
+                }
+            })
         trust_required = TRADE_TRUST_MINIMUM
         transfer       = TRADE_AMOUNT
 
@@ -127,16 +197,55 @@ def propose_trade(sender, receiver) -> str:
             sender.trust_scores[receiver.region_id] = max(
                 0, sender.trust_scores.get(receiver.region_id, 50) - TRUST_LOSS
             )
-            return "trade_rejected_low_trust"
+            return ("trade_rejected_low_trust", {
+                "type": "trade",
+                "source_region": sender.region_id,
+                "target_region": receiver.region_id,
+                "outcome": "trade_rejected_low_trust",
+                "rejection_reason": "trade_rejected_low_trust",
+                "sender_before": sender_before,
+                "trust_before": {
+                    "sender_toward_receiver": old_sender_trust
+                },
+                "trust_after": {
+                    "sender_toward_receiver": round(sender.trust_scores.get(receiver.region_id, 50), 1)
+                }
+            })
 
     # ── Receiver stock check ─────────────────────────────────────────────────
     receiver_has = getattr(receiver, wanted, 0)
     if receiver_has < 30:
-        return "trade_rejected_no_surplus"
+        return ("trade_rejected_no_surplus", {
+            "type": "trade",
+            "source_region": sender.region_id,
+            "target_region": receiver.region_id,
+            "outcome": "trade_rejected_no_surplus",
+            "rejection_reason": "trade_rejected_no_surplus",
+            "sender_before": sender_before,
+            "trust_before": {
+                "sender_toward_receiver": old_sender_trust
+            },
+            "trust_after": {
+                "sender_toward_receiver": round(sender.trust_scores.get(receiver.region_id, 50), 1)
+            }
+        })
 
     actual = min(transfer, receiver_has - 15)
     if actual <= 0:
-        return "trade_rejected_no_surplus"
+        return ("trade_rejected_no_surplus", {
+            "type": "trade",
+            "source_region": sender.region_id,
+            "target_region": receiver.region_id,
+            "outcome": "trade_rejected_no_surplus",
+            "rejection_reason": "trade_rejected_no_surplus",
+            "sender_before": sender_before,
+            "trust_before": {
+                "sender_toward_receiver": old_sender_trust
+            },
+            "trust_after": {
+                "sender_toward_receiver": round(sender.trust_scores.get(receiver.region_id, 50), 1)
+            }
+        })
 
     # ── Execute trade ────────────────────────────────────────────────────────
     if is_urbanex:
@@ -144,6 +253,7 @@ def propose_trade(sender, receiver) -> str:
         setattr(receiver, wanted, getattr(receiver, wanted) - actual)
         setattr(sender,   wanted, getattr(sender,   wanted) + actual)
         sender.manufacturing_power = max(0.0, sender.manufacturing_power - 3.0)
+        offered = "manufacturing"
     else:
         # Bilateral resource swap
         setattr(sender,   wanted,  getattr(sender,   wanted)  + actual)
@@ -166,7 +276,45 @@ def propose_trade(sender, receiver) -> str:
         100, receiver.trust_scores.get(sender.region_id, 50) + TRUST_GAIN
     )
 
-    return "trade_success"
+    # ── Capture resource snapshots AFTER trade ─────────────────────────────
+    sender_after = {
+        "water": round(sender.water, 2),
+        "food": round(sender.food, 2),
+        "energy": round(sender.energy, 2),
+        "land": round(sender.land, 2)
+    }
+    receiver_after = {
+        "water": round(receiver.water, 2),
+        "food": round(receiver.food, 2),
+        "energy": round(receiver.energy, 2),
+        "land": round(receiver.land, 2)
+    }
+
+    # ── Build enriched success event dict ───────────────────────────────────
+    success_event = {
+        "type": "trade",
+        "source_region": sender.region_id,
+        "target_region": receiver.region_id,
+        "outcome": "trade_success",
+        "resource_traded": wanted,
+        "resource_offered": offered if not is_urbanex else "manufacturing",
+        "transfer_amount": actual,
+        "is_manufacturing_trade": is_urbanex,
+        "sender_before": sender_before,
+        "sender_after": sender_after,
+        "receiver_before": receiver_before,
+        "receiver_after": receiver_after,
+        "trust_before": {
+            "sender_toward_receiver": old_sender_trust,
+            "receiver_toward_sender": old_receiver_trust
+        },
+        "trust_after": {
+            "sender_toward_receiver": round(sender.trust_scores.get(receiver.region_id, 50), 1),
+            "receiver_toward_sender": round(receiver.trust_scores.get(sender.region_id, 50), 1)
+        }
+    }
+
+    return ("trade_success", success_event)
 
 
 # ===========================================================================
@@ -210,37 +358,29 @@ def run_trade_phase(regions_list: list, cycle: int = 0) -> list:
             if pair in traded_this_cycle:
                 continue
 
-            outcome = propose_trade(region, partner)
+            outcome, event_data = propose_trade(region, partner)
 
             if outcome == "trade_success":
                 traded_this_cycle.add(pair)
-                trade_events.append({
-                    "type":          "trade",
-                    "cycle":         cycle,
-                    "source_region": region.region_id,
-                    "target_region": partner.region_id,
-                    "outcome":       "trade_success",
-                    "description": (
-                        f"{region.region_id.capitalize()} traded with "
-                        f"{partner.region_id.capitalize()}"
-                    ),
-                })
+                # Enrich with cycle and description
+                event_data["cycle"] = cycle
+                event_data["description"] = (
+                    f"{region.region_id.capitalize()} traded with "
+                    f"{partner.region_id.capitalize()}"
+                )
+                trade_events.append(event_data)
                 success = True
                 break
 
-            elif "rejected" in outcome:
-                trade_events.append({
-                    "type":          "trade",
-                    "cycle":         cycle,
-                    "source_region": region.region_id,
-                    "target_region": partner.region_id,
-                    "outcome":       outcome,
-                    "description": (
-                        f"Trade rejected: "
-                        f"{region.region_id.capitalize()} -> "
-                        f"{partner.region_id.capitalize()} ({outcome})"
-                    ),
-                })
+            elif "rejected" in outcome or "skipped" in outcome:
+                # Enrich rejection event with cycle and description
+                event_data["cycle"] = cycle
+                event_data["description"] = (
+                    f"Trade rejected: "
+                    f"{region.region_id.capitalize()} -> "
+                    f"{partner.region_id.capitalize()} ({outcome})"
+                )
+                trade_events.append(event_data)
                 # Continue trying next partner
 
         if not success and getattr(region, "last_action", "none") == "trade":

@@ -77,9 +77,43 @@ export default function RegionPanel({ region, regionName, onClose }) {
                         <div className="text-xl font-bold font-mono" style={{ color }}>
                             {Math.round(region.population ?? 0).toLocaleString()}
                         </div>
+                        {/* trend arrow and delta */}
+                        {region.population_trend && (
+                            <div className="text-xs mt-0.5"
+                                style={{
+                                    color: region.population_trend === 'growing' ? '#4ade80'
+                                        : region.population_trend === 'declining' ? '#ef4444'
+                                        : '#94a3b8',
+                                }}>
+                                {region.population_trend === 'growing' &&
+                                    `↑ +${region.population_change}`}
+                                {region.population_trend === 'declining' &&
+                                    `↓ ${region.population_change}`}
+                                {region.population_trend === 'stable' && '→ Stable'}
+                            </div>
+                        )}
                         <div className="text-xs text-slate-500 mt-0.5">
                             Min: {GLOBAL_CONSTANTS.COLLAPSE_THRESHOLD_POPULATION}
                         </div>
+                        {/* population bar */}
+                        {region.starting_population && (
+                            (() => {
+                                const cap = region.starting_population * 2.5;
+                                const pct = Math.min(100, (region.population / cap) * 100);
+                                let barColor = '#38bdf8';
+                                if (region.population < region.starting_population) barColor = '#f59e0b';
+                                else if (region.population > region.starting_population) barColor = '#4ade80';
+                                if (pct > 90) barColor = '#ef4444';
+                                return (
+                                    <div className="w-full h-2 bg-slate-800 rounded mt-2">
+                                        <div
+                                            className="h-full rounded"
+                                            style={{ width: `${pct}%`, background: barColor }}
+                                        />
+                                    </div>
+                                );
+                            })()
+                        )}
                     </div>
                     <div>
                         <div className="text-xs text-slate-400 mb-1 font-medium">STRATEGY</div>

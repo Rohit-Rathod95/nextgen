@@ -158,10 +158,16 @@ class World:
         for region in regions_list:
             region.consume()
 
-        # ── Phase 3: Population Dynamics ─────────────────────────
-        # Runs AFTER consume so depletion is accounted for.
+        # ── Phase 3: Population Update ─────────────────────────────
+        # Must run before special abilities; heavy-rate logic now returns change
+        # so we can log dramatic swings for debugging.
         for region in regions_list:
-            region.update_population()
+            change = region.update_population()
+            if abs(change) > 10:
+                logger.info(
+                    f"{region.region_id} population "
+                    f"changed by {change:.0f}"
+                )
 
         # ── Phase 4: Special Abilities ────────────────────────────
         # Regen runs AFTER consume+population so it offsets depletion naturally.
@@ -295,15 +301,7 @@ class World:
 
             # Write individual events
             for event in self.events_this_cycle:
-                write_event(
-                    event_type=event.get("type", "unknown"),
-                    cycle=self.cycle,
-                    source_region=event.get("source_region",
-                                            event.get("affected_region", "")),
-                    target_region=event.get("target_region", ""),
-                    description=event.get("description", ""),
-                    outcome=event.get("outcome", ""),
-                )
+                write_event(event)
 
         except Exception as exc:
             logger.error("Cycle %d persistence failed: %s",

@@ -21,33 +21,33 @@ EVENTS = [
     {
         "type": "drought",
         "targets": ["water"],
-        "severity": 0.45,  # harsher drought
-        "description": "Severe drought depletes water reserves",
+        "severity": 0.45,
+        "description": "Severe drought"
     },
     {
         "type": "flood",
         "targets": ["food"],
-        "severity": 0.20,
-        "description": "Flooding destroys food supplies",
+        "severity": 0.35,
+        "description": "Flooding destroys crops"
     },
     {
         "type": "energy_crisis",
         "targets": ["energy"],
-        "severity": 0.40,  # stronger impact
-        "description": "Energy infrastructure failure",
+        "severity": 0.40,
+        "description": "Energy infrastructure collapse"
     },
     {
         "type": "fertile_season",
-        "targets": ["food", "land"],
-        "severity": -0.15,
-        "description": "Exceptional growing season boosts food",
+        "targets": ["food","land"],
+        "severity": -0.25,
+        "description": "Exceptional harvest season"
     },
     {
         "type": "solar_surge",
         "targets": ["energy"],
-        "severity": -0.20,
-        "description": "Abundant solar energy production",
-    },
+        "severity": -0.30,
+        "description": "Renewable energy boom"
+    }
 ]
 
 
@@ -110,8 +110,9 @@ def apply_event(region, event: dict) -> dict:
 
 def run_climate_phase(regions_list: list) -> list:
     """
-    Run the climate phase for one cycle. Randomly selects 1-2 regions
-    and rolls for a climate event on each.
+    Run the climate phase for one cycle. Each region rolls independently
+    for an event using the global probability. This change makes disasters
+    frequent and uncorrelated (≈10 events per region over 20 cycles).
 
     Args:
         regions_list: List of Region objects.
@@ -119,18 +120,11 @@ def run_climate_phase(regions_list: list) -> list:
     Returns:
         List of event log dicts for events that fired.
     """
-    if not regions_list:
-        return []
-
     events_fired = []
 
-    # Pick 1 or 2 random regions
-    count = random.randint(1, min(2, len(regions_list)))
-    targets = random.sample(regions_list, count)
-
-    for region in targets:
-        if should_fire_event():
-            event = get_random_event()
+    for region in regions_list:
+        if random.random() < CLIMATE_EVENT_PROBABILITY:
+            event = random.choice(EVENTS)
             log = apply_event(region, event)
             events_fired.append(log)
 

@@ -7,14 +7,19 @@ const TYPE_CONFIG = {
     conflict: { icon: '⚔️', color: '#ef4444', bg: 'bg-red-900/20', border: 'border-red-700/30', label: 'CONFLICT' },
 };
 
-function EventItem({ event, isNew }) {
+function EventItem({ event, isNew, onTradeClick }) {
     const cfg = TYPE_CONFIG[event.type] || {
         icon: '📋', color: '#94a3b8', bg: 'bg-slate-800/50', border: 'border-slate-700/30', label: 'EVENT',
     };
 
+    const isTradeEvent = event.type === 'trade';
+    const baseClasses = `rounded-lg p-2.5 border ${cfg.bg} ${cfg.border} ${isNew ? 'event-enter' : ''} mb-2`;
+    const interactiveClasses = isTradeEvent ? 'cursor-pointer hover:bg-white/10 transition-colors' : '';
+
     return (
         <div
-            className={`rounded-lg p-2.5 border ${cfg.bg} ${cfg.border} ${isNew ? 'event-enter' : ''} mb-2`}
+            className={`${baseClasses} ${interactiveClasses}`}
+            onClick={() => isTradeEvent && onTradeClick(event)}
         >
             <div className="flex items-start gap-2">
                 <span className="text-base mt-0.5">{cfg.icon}</span>
@@ -40,13 +45,16 @@ function EventItem({ event, isNew }) {
                             ))}
                         </div>
                     )}
+                    {isTradeEvent && (
+                        <p className="text-xs text-slate-500 mt-2">→ Click for details</p>
+                    )}
                 </div>
             </div>
         </div>
     );
 }
 
-export default function EventLog({ events }) {
+export default function EventLog({ events, onTradeSelect }) {
     const bottomRef = useRef(null);
     const prevLen = useRef(0);
 
@@ -76,7 +84,12 @@ export default function EventLog({ events }) {
                     </div>
                 ) : (
                     events.map((ev, idx) => (
-                        <EventItem key={ev.id || idx} event={ev} isNew={idx === 0} />
+                        <EventItem
+                            key={ev.id || idx}
+                            event={ev}
+                            isNew={idx === 0}
+                            onTradeClick={onTradeSelect}
+                        />
                     ))
                 )}
                 <div ref={bottomRef} />

@@ -49,6 +49,9 @@ export default function Timeline({ worldState, isFirebaseReady }) {
     const eventCfg = EVENT_TYPE_COLORS[current_event] || { icon: '🌍', color: '#94a3b8' };
     const simDone = current_cycle >= TOTAL_CYCLES;
 
+    const START_YEAR = 2025;
+    const displayYear = START_YEAR + current_cycle;
+
     const statusLabel = simDone ? 'COMPLETE' : isRunning ? 'RUNNING' : 'PAUSED';
     const statusColor = simDone ? '#4ade80' : isRunning ? '#38bdf8' : '#f59e0b';
 
@@ -193,6 +196,13 @@ export default function Timeline({ worldState, isFirebaseReady }) {
                     </div>
                 </div>
 
+                {/* Cycle / Year display */}
+                <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono text-slate-200">
+                        📅 Year {displayYear} 
+                        (Cycle {current_cycle} of {TOTAL_CYCLES})
+                    </span>
+                </div>
                 {/* Status + Event */}
                 <div className="flex items-center gap-3">
                     {current_event && current_event !== 'None' && (

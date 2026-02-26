@@ -7,6 +7,7 @@ import WorldMap from './components/WorldMap';
 import RegionPanel from './components/RegionPanel';
 import EventLog from './components/EventLog';
 import AnalysisOverlay from './components/AnalysisOverlay';
+import TradeDetailModal from './components/TradeDetailModal';
 
 const { TOTAL_CYCLES } = GLOBAL_CONSTANTS;
 
@@ -18,6 +19,7 @@ export default function App() {
 
     const [selectedRegion, setSelectedRegion] = useState(null);
     const [showAnalysis, setShowAnalysis] = useState(false);
+    const [selectedTrade, setSelectedTrade] = useState(null);
 
     // Auto-show analysis when simulation completes
     const simComplete = (worldState?.current_cycle ?? 0) >= TOTAL_CYCLES && !worldState?.is_running;
@@ -100,7 +102,7 @@ export default function App() {
                 {/* ── RIGHT: Event Log ── */}
                 <div className="glass rounded-xl p-4 overflow-hidden flex flex-col min-h-0">
                     <div className="flex-1 overflow-y-auto min-h-0">
-                        <EventLog events={events} />
+                        <EventLog events={events} onTradeSelect={setSelectedTrade} />
                     </div>
 
                     {/* Analysis button */}
@@ -121,6 +123,12 @@ export default function App() {
                     )}
                 </div>
             </div>
+
+            {/* ═══ TRADE DETAIL MODAL ═══ */}
+            <TradeDetailModal
+                trade={selectedTrade}
+                onClose={() => setSelectedTrade(null)}
+            />
 
             {/* ═══ ANALYSIS OVERLAY ═══ */}
             {showAnalysis && (
