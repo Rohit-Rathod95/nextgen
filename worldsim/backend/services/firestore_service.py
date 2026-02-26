@@ -237,7 +237,7 @@ def write_event(event_type: str,
 # FUNCTION 5 - Write Cycle Log
 # ---------------------------------------------------------------------------
 
-def write_cycle_log(cycle: int, regions_snapshot: dict, events_fired: list = None) -> bool:
+def write_cycle_log(cycle: int, regions_snapshot: dict, events_fired=None) -> bool:
     """
     Write a complete world snapshot for a specific cycle.
 
@@ -256,6 +256,8 @@ def write_cycle_log(cycle: int, regions_snapshot: dict, events_fired: list = Non
     """
     if not _check_db():
         return False
+    if events_fired is None:
+        events_fired = []
     try:
         # Zero-pad cycle number for consistent ordering
         doc_id = f"cycle_{str(cycle).zfill(3)}"
@@ -263,15 +265,17 @@ def write_cycle_log(cycle: int, regions_snapshot: dict, events_fired: list = Non
         data = {
             "cycle": cycle,
             "regions_snapshot": regions_snapshot,
-            "events_fired": events_fired or [],
-            "timestamp": firestore.SERVER_TIMESTAMP,
+            "events_fired": events_fired,
+            "timestamp": firestore.SERVER_TIMESTAMP
         }
-
-        doc_ref = db.collection(COLLECTION_CYCLE_LOGS).document(doc_id)
-        doc_ref.set(data, merge=False)
-
-        logger.info("write_cycle_log: wrote snapshot for cycle %d.", cycle)
-        return True
+        try:
+            db.collection(COLLECTION_CYCLE_LOGS
+                          ).document(doc_id).set(data)
+            return True
+        except Exception as e:
+            logger.error(
+                f"write_cycle_log error: {e}")
+            return False
 
     except Exception as exc:
         logger.error("write_cycle_log: failed for cycle %d - %s", cycle, exc)

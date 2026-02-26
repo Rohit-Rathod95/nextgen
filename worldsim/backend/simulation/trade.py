@@ -117,10 +117,17 @@ def propose_trade(sender, receiver) -> str:
     # ── Trust check ──────────────────────────────────────────────────────────
     receiver_trust = receiver.trust_scores.get(sender.region_id, 50)
     if receiver_trust < trust_required:
-        sender.trust_scores[receiver.region_id] = max(
-            0, sender.trust_scores.get(receiver.region_id, 50) - TRUST_LOSS
-        )
-        return "trade_rejected_low_trust"
+        # allow a small "first contact" trade if trust in low yet >= 15
+        if receiver_trust >= 15 and not is_urbanex:
+            # attempt a reduced transfer to build trust
+            transfer = 8  # smaller transfer amount
+            # continue execution below (skip penalty)
+        else:
+            # penalize sender trust for low-trust rejection
+            sender.trust_scores[receiver.region_id] = max(
+                0, sender.trust_scores.get(receiver.region_id, 50) - TRUST_LOSS
+            )
+            return "trade_rejected_low_trust"
 
     # ── Receiver stock check ─────────────────────────────────────────────────
     receiver_has = getattr(receiver, wanted, 0)

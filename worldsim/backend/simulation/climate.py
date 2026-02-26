@@ -21,7 +21,7 @@ EVENTS = [
     {
         "type": "drought",
         "targets": ["water"],
-        "severity": 0.30,
+        "severity": 0.45,  # harsher drought
         "description": "Severe drought depletes water reserves",
     },
     {
@@ -33,7 +33,7 @@ EVENTS = [
     {
         "type": "energy_crisis",
         "targets": ["energy"],
-        "severity": 0.25,
+        "severity": 0.40,  # stronger impact
         "description": "Energy infrastructure failure",
     },
     {

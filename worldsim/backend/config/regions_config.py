@@ -27,7 +27,7 @@ COLLAPSE_POPULATION = 100   # Population below this -> collapse eligible
 SURPLUS_THRESHOLD   = 55    # Resource above this -> tradeable surplus
 DEFICIT_THRESHOLD   = 45    # Resource below this -> region needs it
 
-TRADE_TRUST_MINIMUM = 25    # Min trust to propose trade (global trade model)
+TRADE_TRUST_MINIMUM = 20    # Min trust to propose trade (global trade model)  # lowered to encourage early alliances
 
 # ---------------------------------------------------------------------------
 # Agent Defaults
@@ -42,7 +42,7 @@ INITIAL_WEIGHT = 0.25  # Starting weight for each of 4 strategies
 
 CYCLE_SPEED = 1.0
 TOTAL_CYCLES = 100
-CLIMATE_EVENT_PROBABILITY = 0.25   # 25% chance per cycle (raised for more events)
+CLIMATE_EVENT_PROBABILITY = 0.30   # 30% chance per cycle (higher to force more climate events)
 
 # ---------------------------------------------------------------------------
 # Population Dynamics (in region.py, not here — kept for cross-module ref)
@@ -94,11 +94,11 @@ INITIAL_REGIONS = {
 # ---------------------------------------------------------------------------
 
 CONSUMPTION_RATES = {
-    "aquaria":   {"water": 1.2, "food": 0.9, "energy": 0.6, "land": 0.2},
-    "agrovia":   {"water": 0.9, "food": 1.4, "energy": 0.7, "land": 0.4},
-    "petrozon":  {"water": 0.7, "food": 0.6, "energy": 1.5, "land": 0.3},
-    "urbanex":   {"water": 1.5, "food": 1.4, "energy": 1.2, "land": 0.7},
-    "terranova": {"water": 0.8, "food": 0.9, "energy": 0.7, "land": 0.3},
+    "aquaria":   {"water": 1.4, "food": 1.0, "energy": 0.7, "land": 0.2},
+    "agrovia":   {"water": 1.1, "food": 1.6, "energy": 0.8, "land": 0.5},
+    "petrozon":  {"water": 0.9, "food": 0.8, "energy": 1.8, "land": 0.3},
+    "urbanex":   {"water": 1.8, "food": 1.7, "energy": 1.5, "land": 0.9},
+    "terranova": {"water": 0.9, "food": 1.0, "energy": 0.8, "land": 0.3},
 }
 
 # ---------------------------------------------------------------------------

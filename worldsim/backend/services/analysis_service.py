@@ -201,10 +201,11 @@ def _build_collapse_description(region_id: str, cycle: int,
 
 def detect_alliances(cycle_logs: list) -> list:
     """
-    Find region pairs that successfully traded for 5+ consecutive cycles.
+    Find region pairs that successfully traded for 3+ consecutive cycles.
 
-    Reads actual trade events from events_fired list in each cycle log.
-    This is accurate because run_trade_phase() always appends events.
+    Tracks both the current consecutive run and the peak duration for each pair
+    so that the final reported duration reflects the longest uninterrupted
+    sequence even if the alliance breaks before the simulation ends.
 
     Args:
         cycle_logs: Sorted list of cycle log dicts.
@@ -216,6 +217,7 @@ def detect_alliances(cycle_logs: list) -> list:
     from config.regions_config import REGIONS
 
     consecutive = {}
+    peak_duration = {}
     alliances = {}
 
     for log in cycle_logs:
@@ -226,7 +228,6 @@ def detect_alliances(cycle_logs: list) -> list:
             continue
 
         traded_pairs_this_cycle = set()
-
         for event in events:
             if not isinstance(event, dict):
                 continue
@@ -241,42 +242,39 @@ def detect_alliances(cycle_logs: list) -> list:
                     traded_pairs_this_cycle.add(pair)
 
         all_pairs = set()
-        for r1 in REGIONS:
-            for r2 in REGIONS:
-                if r1 < r2:
-                    all_pairs.add((r1, r2))
+        for i, r1 in enumerate(REGIONS):
+            for r2 in REGIONS[i + 1:]:
+                all_pairs.add(tuple(sorted([r1, r2])))
 
         for pair in all_pairs:
             if pair in traded_pairs_this_cycle:
                 consecutive[pair] = consecutive.get(pair, 0) + 1
-                if (
-                    consecutive[pair] >= ALLIANCE_CONSECUTIVE_THRESHOLD
-                    and pair not in alliances
-                ):
+                if consecutive[pair] > peak_duration.get(pair, 0):
+                    peak_duration[pair] = consecutive[pair]
+                if consecutive[pair] >= 3 and pair not in alliances:
                     alliances[pair] = {
-                        "formed_at": cycle_num,
-                        "duration": consecutive[pair]
+                        "formed_at": cycle_num - consecutive[pair] + 1,
+                        "duration": consecutive[pair],
                     }
             else:
-                if pair in consecutive:
-                    consecutive[pair] = 0
+                consecutive[pair] = 0
 
     result = []
     for pair, data in alliances.items():
         r1, r2 = pair
-        duration = consecutive.get(pair, 0)
+        final_duration = peak_duration.get(pair, 0)
         result.append({
             "regions": [r1, r2],
             "formed_at": data["formed_at"],
-            "duration": duration,
-            "held_until_end": duration > 0,
+            "duration": final_duration,
+            "held_until_end": consecutive.get(pair, 0) > 0,
             "description": (
                 f"{r1.capitalize()} and "
                 f"{r2.capitalize()} formed a "
                 f"stable trade alliance from "
                 f"cycle {data['formed_at']}, "
-                f"lasting {duration} cycles."
-            )
+                f"lasting {final_duration} cycles."
+            ),
         })
 
     logger.info("detect_alliances: found %d alliances.", len(result))
@@ -488,14 +486,22 @@ def generate_key_insights(collapses: list, alliances: list,
 
     # --- Alliance insights ---
     if alliances:
-        longest = max(alliances, key=lambda a: a["duration"])
-        name_a = longest["regions"][0].capitalize()
-        name_b = longest["regions"][1].capitalize()
-        insights.append(
-            f"{name_a} and {name_b} maintained the longest alliance - "
-            f"{longest['duration']} consecutive cycles - driven by "
-            f"complementary resource exchange."
+        longest = max(
+            alliances,
+            key=lambda a: a.get("duration", 0),
+            default=None,
         )
+        if longest and longest.get("duration", 0) > 0:
+            name_a = longest["regions"][0].capitalize()
+            name_b = longest["regions"][1].capitalize()
+            dur = longest["duration"]
+            formed = longest.get("formed_at")
+            insights.append(
+                f"{name_a} and {name_b} maintained the "
+                f"longest alliance — {dur} consecutive cycles starting "
+                f"from cycle {formed} — driven by complementary resource "
+                f"exchange."
+            )
 
     # --- Strategy insight ---
     if dominant_strategy in ("Aggressor", "Trader", "Hoarder", "Investor"):
