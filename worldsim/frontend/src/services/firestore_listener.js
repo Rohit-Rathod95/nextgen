@@ -57,21 +57,41 @@ function normalizeRegion(raw) {
     // Capitalise the region name used as the lookup key
     const name = capitalize(raw.region_id || raw.name || '');
 
-    // strategy_weights — backend already sends nested {trade, hoard, invest, aggress}
-    // Keep as-is; components will read strategy_weights.trade etc.
+    // strategy_weights — backend region.py to_dict() writes FLAT fields:
+    //   trade_weight, hoard_weight, invest_weight, aggress_weight
+    // Rebuild nested object from either format.
     const strategy_weights = raw.strategy_weights || {
-        trade: 0.25, hoard: 0.25, invest: 0.25, aggress: 0.25,
+        trade: raw.trade_weight ?? 0.25,
+        hoard: raw.hoard_weight ?? 0.25,
+        invest: raw.invest_weight ?? 0.25,
+        aggress: raw.aggress_weight ?? 0.25,
     };
 
-    // trust_scores — backend sends {aquaria: 50} (0-100, lowercase)
-    // Normalise to {Aquaria: 0.5} (0-1, capitalised) for frontend
+    // trust — backend region.py to_dict() writes FLAT fields:
+    //   trust_aquaria, trust_agrovia, trust_petrozon, trust_urbanex, trust_terranova (0-100 scale)
+    // Rebuild capitalised 0-1 object from either format.
     const trust = {};
-    const rawTrust = raw.trust_scores || raw.trust || {};
-    Object.entries(rawTrust).forEach(([k, v]) => {
-        const capKey = capitalize(k);
-        // If value > 1 it's the 0-100 scale, normalise to 0-1
-        trust[capKey] = v > 1 ? v / 100 : v;
-    });
+    if (raw.trust_scores) {
+        // Nested trust_scores object (e.g. from mock/test data)
+        Object.entries(raw.trust_scores).forEach(([k, v]) => {
+            trust[capitalize(k)] = v > 1 ? v / 100 : v;
+        });
+    } else if (raw.trust) {
+        // Already-normalised trust object — pass through, renormalize scale
+        Object.entries(raw.trust).forEach(([k, v]) => {
+            trust[capitalize(k)] = v > 1 ? v / 100 : v;
+        });
+    } else {
+        // Flat trust_* fields from region.py to_dict()
+        const REGION_NAMES = ['aquaria', 'agrovia', 'petrozon', 'urbanex', 'terranova'];
+        REGION_NAMES.forEach((rName) => {
+            const flatKey = `trust_${rName}`;
+            if (raw[flatKey] !== undefined) {
+                const v = raw[flatKey];
+                trust[capitalize(rName)] = v > 1 ? v / 100 : v;
+            }
+        });
+    }
 
     return {
         ...raw,
