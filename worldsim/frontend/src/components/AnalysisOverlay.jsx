@@ -2,7 +2,7 @@
 import React from 'react';
 
 function InsightCard({ text, index }) {
-    const colors = ['#38bdf8', '#4ade80', '#f59e0b', '#c084fc', '#f87171'];
+    const colors = ['#38bdf8', '#4ade80', '#f59e0b', '#c084fc', '#f87171', '#34d399'];
     const c = colors[index % colors.length];
     return (
         <div
@@ -17,18 +17,56 @@ function InsightCard({ text, index }) {
     );
 }
 
+function CollapseCard({ region, index }) {
+    // collapsed_region may be a string (region name) or a dict { region_id, cause, collapse_cycle }
+    const colors = ['#ef4444', '#f97316', '#f59e0b', '#ec4899', '#a78bfa'];
+    const c = colors[index % colors.length];
+
+    const name = typeof region === 'string'
+        ? region
+        : (region.region_id || region.region || 'Unknown');
+
+    const cause = typeof region === 'object' ? region.cause : null;
+    const cycle = typeof region === 'object' ? region.collapse_cycle : null;
+
+    return (
+        <div
+            className="rounded-lg p-3 border"
+            style={{ background: '#ef444408', borderColor: '#ef444430' }}
+        >
+            <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm px-2 py-0.5 rounded font-mono bg-red-900/30 text-red-400">
+                    💀 {name.charAt(0).toUpperCase() + name.slice(1)}
+                </span>
+                {cycle && (
+                    <span className="text-xs text-slate-500 font-mono">cycle {cycle}</span>
+                )}
+            </div>
+            {cause && (
+                <p className="text-xs text-slate-400 mt-1.5">{cause}</p>
+            )}
+        </div>
+    );
+}
+
 function ClusterBadge({ cluster, index }) {
     const colors = ['#38bdf8', '#4ade80', '#f59e0b', '#c084fc', '#f87171'];
     const c = colors[index % colors.length];
+
+    // cluster may be an array of region names, or a dict { regions: [...], ... }
+    const members = Array.isArray(cluster)
+        ? cluster
+        : (cluster.regions || cluster.partners || [cluster].flat());
+
     return (
         <div
             className="flex flex-wrap gap-1.5 p-2 rounded-lg border"
             style={{ background: `${c}10`, borderColor: `${c}25` }}
         >
-            {(Array.isArray(cluster) ? cluster : [cluster]).map((name) => (
+            {members.map((name) => (
                 <span
                     key={name}
-                    className="text-xs px-2 py-0.5 rounded font-mono"
+                    className="text-xs px-2 py-0.5 rounded font-mono capitalize"
                     style={{ background: `${c}20`, color: c }}
                 >
                     {name}
@@ -46,6 +84,8 @@ export default function AnalysisOverlay({ analysis, onClose }) {
         collapsed_regions = [],
         alliance_clusters = [],
         key_insights = [],
+        real_world_parallel = '',
+        simulation_summary = '',
     } = analysis;
 
     return (
@@ -93,15 +133,29 @@ export default function AnalysisOverlay({ analysis, onClose }) {
                         </div>
                     </div>
 
+                    {/* Simulation summary */}
+                    {simulation_summary && (
+                        <div className="glass rounded-xl p-4">
+                            <div className="text-xs text-slate-400 mb-2 font-medium">SIMULATION SUMMARY</div>
+                            <p className="text-sm text-slate-300 leading-relaxed">{simulation_summary}</p>
+                        </div>
+                    )}
+
+                    {/* Real world parallel */}
+                    {real_world_parallel && (
+                        <div className="glass rounded-xl p-4 border border-indigo-800/30">
+                            <div className="text-xs text-indigo-400 mb-2 font-medium">🌐 REAL WORLD PARALLEL</div>
+                            <p className="text-sm text-slate-300 leading-relaxed">{real_world_parallel}</p>
+                        </div>
+                    )}
+
                     {/* Collapsed regions */}
                     {collapsed_regions.length > 0 && (
                         <div>
                             <div className="text-xs text-slate-400 font-medium mb-2">COLLAPSED REGIONS</div>
-                            <div className="flex flex-wrap gap-2">
-                                {collapsed_regions.map((r) => (
-                                    <span key={r} className="text-sm px-3 py-1 rounded bg-red-900/30 border border-red-700/40 text-red-400 font-mono">
-                                        💀 {r}
-                                    </span>
+                            <div className="flex flex-col gap-2">
+                                {collapsed_regions.map((r, i) => (
+                                    <CollapseCard key={i} region={r} index={i} />
                                 ))}
                             </div>
                         </div>

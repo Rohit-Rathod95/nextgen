@@ -4,17 +4,6 @@ import { REGION_META, GLOBAL_CONSTANTS } from '../constants/regions_meta';
 import ResourceBars from './ResourceBars';
 import StrategyRadar from './StrategyRadar';
 
-function StatRow({ label, value, unit = '', color }) {
-    return (
-        <div className="flex justify-between items-center py-1 border-b border-slate-800">
-            <span className="text-xs text-slate-400">{label}</span>
-            <span className="text-xs font-mono font-medium" style={{ color: color || '#e2e8f0' }}>
-                {typeof value === 'number' ? value.toFixed(1) : value}{unit}
-            </span>
-        </div>
-    );
-}
-
 export default function RegionPanel({ region, regionName, onClose }) {
     if (!region || !regionName) {
         return (
@@ -28,11 +17,23 @@ export default function RegionPanel({ region, regionName, onClose }) {
 
     const meta = REGION_META[regionName] || {};
     const color = meta.color || '#38bdf8';
-    const health = region.health_score ?? 0;
-    const collapsed = (region.population ?? 999) < GLOBAL_CONSTANTS.COLLAPSE_THRESHOLD_POPULATION;
 
-    const healthLabel = health >= 0.7 ? 'HEALTHY' : health >= 0.4 ? 'STRESSED' : 'CRITICAL';
-    const healthColor = health >= 0.7 ? '#4ade80' : health >= 0.4 ? '#f59e0b' : '#ef4444';
+    // health_score is 0-100 from the backend (normalizeRegion keeps it as-is)
+    const health = region.health_score ?? 0;
+    const healthPct = Math.min(100, Math.max(0, health)).toFixed(1);
+
+    // Use is_collapsed boolean from backend; fall back to population threshold
+    const collapsed = region.is_collapsed || (region.population ?? 999) < GLOBAL_CONSTANTS.COLLAPSE_THRESHOLD_POPULATION;
+
+    // Thresholds match 0-100 scale
+    const healthLabel = health >= 70 ? 'HEALTHY' : health >= 40 ? 'STRESSED' : 'CRITICAL';
+    const healthColor = health >= 70 ? '#4ade80' : health >= 40 ? '#f59e0b' : '#ef4444';
+
+    // Strategy label from backend or derive from weights
+    const strategyLabel = region.strategy_label || null;
+
+    // Last action
+    const lastAction = region.last_action || '—';
 
     return (
         <div className="flex flex-col gap-4 h-full overflow-y-auto pr-1">
@@ -63,19 +64,32 @@ export default function RegionPanel({ region, regionName, onClose }) {
                         {healthLabel}
                     </div>
                     <div className="text-xs font-mono mt-1" style={{ color: healthColor }}>
-                        {(health * 100).toFixed(1)}%
+                        {healthPct}%
                     </div>
                 </div>
             </div>
 
-            {/* Population */}
+            {/* Population + Status Row */}
             <div className="glass rounded-xl p-3">
-                <div className="text-xs text-slate-400 mb-2 font-medium">POPULATION</div>
-                <div className="text-2xl font-bold font-mono" style={{ color }}>
-                    {Math.round(region.population ?? 0).toLocaleString()}
-                </div>
-                <div className="text-xs text-slate-500 mt-1">
-                    Collapse threshold: {GLOBAL_CONSTANTS.COLLAPSE_THRESHOLD_POPULATION}
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <div className="text-xs text-slate-400 mb-1 font-medium">POPULATION</div>
+                        <div className="text-xl font-bold font-mono" style={{ color }}>
+                            {Math.round(region.population ?? 0).toLocaleString()}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                            Min: {GLOBAL_CONSTANTS.COLLAPSE_THRESHOLD_POPULATION}
+                        </div>
+                    </div>
+                    <div>
+                        <div className="text-xs text-slate-400 mb-1 font-medium">STRATEGY</div>
+                        <div className="text-sm font-bold" style={{ color }}>
+                            {strategyLabel || 'Balanced'}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-0.5">
+                            Last: {lastAction}
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -88,27 +102,32 @@ export default function RegionPanel({ region, regionName, onClose }) {
             {/* Trust Scores */}
             <div className="glass rounded-xl p-3">
                 <div className="text-xs text-slate-400 mb-2 font-medium">TRUST SCORES</div>
-                {region.trust && Object.entries(region.trust).map(([neighbor, trust]) => {
-                    const nMeta = REGION_META[neighbor] || {};
-                    const trustPct = (trust * 100).toFixed(0);
-                    const trustColor = trust >= 0.6 ? '#4ade80' : trust >= 0.4 ? '#f59e0b' : '#ef4444';
-                    return (
-                        <div key={neighbor} className="mb-2">
-                            <div className="flex justify-between text-xs mb-1">
-                                <span className="text-slate-400" style={{ color: nMeta.color }}>
-                                    {nMeta.icon} {neighbor}
-                                </span>
-                                <span className="font-mono" style={{ color: trustColor }}>{trustPct}%</span>
+                {region.trust && Object.keys(region.trust).length > 0 ? (
+                    Object.entries(region.trust).map(([neighbor, trust]) => {
+                        const nMeta = REGION_META[neighbor] || {};
+                        // trust is 0-1 after normalizeRegion
+                        const trustPct = (trust * 100).toFixed(0);
+                        const trustColor = trust >= 0.6 ? '#4ade80' : trust >= 0.4 ? '#f59e0b' : '#ef4444';
+                        return (
+                            <div key={neighbor} className="mb-2">
+                                <div className="flex justify-between text-xs mb-1">
+                                    <span className="text-slate-400" style={{ color: nMeta.color }}>
+                                        {nMeta.icon} {neighbor}
+                                    </span>
+                                    <span className="font-mono" style={{ color: trustColor }}>{trustPct}%</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-slate-800">
+                                    <div
+                                        className="h-full rounded-full transition-all duration-500"
+                                        style={{ width: `${trustPct}%`, background: trustColor }}
+                                    />
+                                </div>
                             </div>
-                            <div className="h-1.5 rounded-full bg-slate-800">
-                                <div
-                                    className="h-full rounded-full transition-all duration-500"
-                                    style={{ width: `${trustPct}%`, background: trustColor }}
-                                />
-                            </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })
+                ) : (
+                    <p className="text-xs text-slate-500">Trust data loading…</p>
+                )}
             </div>
 
             {/* Strategy Radar */}

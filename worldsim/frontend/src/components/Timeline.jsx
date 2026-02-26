@@ -1,33 +1,54 @@
-// Timeline component — cycle progress bar and world state control strip.
-import React from 'react';
+// Timeline component — cycle progress bar, world state control strip, and API control buttons.
+import React, { useState, useCallback } from 'react';
 import { GLOBAL_CONSTANTS } from '../constants/regions_meta';
 
 const { TOTAL_CYCLES } = GLOBAL_CONSTANTS;
 
+// Backend API base URL
+const API_BASE = 'http://localhost:8000';
+
 const EVENT_TYPE_COLORS = {
-    Drought: { icon: '☀️', color: '#f59e0b' },
-    Flood: { icon: '🌊', color: '#38bdf8' },
-    'Energy Crisis': { icon: '⚡', color: '#ef4444' },
+    drought: { icon: '☀️', color: '#f59e0b' },
+    flood: { icon: '🌊', color: '#38bdf8' },
+    energy_crisis: { icon: '⚡', color: '#ef4444' },
+    fertile_season: { icon: '🌿', color: '#4ade80' },
+    solar_surge: { icon: '🌞', color: '#fbbf24' },
     None: { icon: '✅', color: '#4ade80' },
 };
+
+async function apiCall(endpoint) {
+    const res = await fetch(`${API_BASE}${endpoint}`, { method: 'POST' });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    return res.json();
+}
 
 export default function Timeline({ worldState, isFirebaseReady }) {
     const { current_cycle = 0, current_event = 'None', is_running = false } = worldState || {};
 
+    const [apiError, setApiError] = useState(null);
+    const [loading, setLoading] = useState(false);
+
     const pct = Math.min(100, (current_cycle / TOTAL_CYCLES) * 100);
     const eventCfg = EVENT_TYPE_COLORS[current_event] || { icon: '🌍', color: '#94a3b8' };
+    const simDone = current_cycle >= TOTAL_CYCLES;
 
-    const statusLabel = current_cycle >= TOTAL_CYCLES
-        ? 'COMPLETE'
-        : is_running
-            ? 'RUNNING'
-            : 'PAUSED';
+    const statusLabel = simDone ? 'COMPLETE' : is_running ? 'RUNNING' : 'PAUSED';
+    const statusColor = simDone ? '#4ade80' : is_running ? '#38bdf8' : '#f59e0b';
 
-    const statusColor = current_cycle >= TOTAL_CYCLES
-        ? '#4ade80'
-        : is_running
-            ? '#38bdf8'
-            : '#f59e0b';
+    const handleApi = useCallback(async (endpoint) => {
+        setLoading(true);
+        setApiError(null);
+        try {
+            await apiCall(endpoint);
+        } catch (e) {
+            setApiError(e.message);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
 
     return (
         <div className="glass rounded-xl px-4 py-3 flex flex-col gap-2">
@@ -55,8 +76,8 @@ export default function Timeline({ worldState, isFirebaseReady }) {
 
                 {/* Status + cycle */}
                 <div className="flex items-center gap-3">
-                    {/* Current climate event */}
-                    {current_event !== 'None' && (
+                    {/* Current climate event badge */}
+                    {current_event && current_event !== 'None' && (
                         <div
                             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
                             style={{ background: `${eventCfg.color}20`, color: eventCfg.color }}
@@ -78,7 +99,7 @@ export default function Timeline({ worldState, isFirebaseReady }) {
                         className="text-xs font-mono px-2.5 py-1 rounded-full font-semibold flex items-center gap-1.5"
                         style={{ background: `${statusColor}20`, color: statusColor }}
                     >
-                        {is_running && current_cycle < TOTAL_CYCLES && (
+                        {is_running && !simDone && (
                             <span
                                 className="inline-block w-1.5 h-1.5 rounded-full"
                                 style={{ background: statusColor, animation: 'pulse 1.5s ease-in-out infinite' }}
@@ -87,11 +108,91 @@ export default function Timeline({ worldState, isFirebaseReady }) {
                         {statusLabel}
                     </div>
                 </div>
+
+                {/* ─── API Control Buttons ─── */}
+                <div className="flex items-center gap-2 ml-auto">
+                    {!is_running && !simDone && (
+                        <button
+                            onClick={() => handleApi('/start')}
+                            disabled={loading}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40"
+                            style={{
+                                background: 'linear-gradient(135deg, #0ea5e9, #6366f1)',
+                                color: '#fff',
+                                boxShadow: '0 0 12px #6366f140',
+                            }}
+                        >
+                            {loading ? '…' : '▶ Start'}
+                        </button>
+                    )}
+                    {is_running && (
+                        <button
+                            onClick={() => handleApi('/pause')}
+                            disabled={loading}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40"
+                            style={{
+                                background: '#f59e0b20',
+                                border: '1px solid #f59e0b50',
+                                color: '#f59e0b',
+                            }}
+                        >
+                            {loading ? '…' : '⏸ Pause'}
+                        </button>
+                    )}
+                    {!is_running && current_cycle > 0 && !simDone && (
+                        <button
+                            onClick={() => handleApi('/resume')}
+                            disabled={loading}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40"
+                            style={{
+                                background: '#4ade8020',
+                                border: '1px solid #4ade8050',
+                                color: '#4ade80',
+                            }}
+                        >
+                            {loading ? '…' : '▶ Resume'}
+                        </button>
+                    )}
+                    {(is_running || current_cycle > 0) && !simDone && (
+                        <button
+                            onClick={() => handleApi('/stop')}
+                            disabled={loading}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40"
+                            style={{
+                                background: '#ef444420',
+                                border: '1px solid #ef444450',
+                                color: '#ef4444',
+                            }}
+                        >
+                            {loading ? '…' : '■ Stop'}
+                        </button>
+                    )}
+                    {simDone && (
+                        <button
+                            onClick={() => handleApi('/start')}
+                            disabled={loading}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40"
+                            style={{
+                                background: 'linear-gradient(135deg, #4ade80, #0ea5e9)',
+                                color: '#0f172a',
+                            }}
+                        >
+                            {loading ? '…' : '🔄 Restart'}
+                        </button>
+                    )}
+                </div>
             </div>
+
+            {/* API error banner */}
+            {apiError && (
+                <div className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded px-3 py-1.5 flex justify-between">
+                    <span>⚠ Backend error: {apiError}</span>
+                    <button onClick={() => setApiError(null)} className="text-red-500 hover:text-red-300 ml-2">✕</button>
+                </div>
+            )}
 
             {/* Progress bar */}
             <div className="relative h-2 rounded-full bg-slate-800 overflow-hidden">
-                {/* Gradient fill */}
                 <div
                     className="h-full rounded-full transition-all duration-700 ease-out"
                     style={{
@@ -100,7 +201,6 @@ export default function Timeline({ worldState, isFirebaseReady }) {
                         boxShadow: '0 0 10px rgba(56,189,248,0.4)',
                     }}
                 />
-                {/* Milestone markers */}
                 {[25, 50, 75].map((m) => (
                     <div
                         key={m}
