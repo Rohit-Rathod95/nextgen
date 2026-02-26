@@ -18,9 +18,9 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-
+from config.regions_config import TOTAL_CYCLES
 from simulation.world import World
 
 # ---------------------------------------------------------------------------
@@ -147,7 +147,7 @@ async def start_simulation():
     logger.info("Simulation started via API.")
     return {
         "status": "started",
-        "total_cycles": 100,
+        "total_cycles": TOTAL_CYCLES,
         "regions": list(world.regions.keys()),
     }
 
