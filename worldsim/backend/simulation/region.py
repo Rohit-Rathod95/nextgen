@@ -15,7 +15,23 @@ from config.regions_config import (
     REGIONS, RESOURCES, CRITICAL_THRESHOLD,
     EMERGENCY_THRESHOLD, COLLAPSE_THRESHOLD,
     CONSUMPTION_RATES, INITIAL_TRUST, INITIAL_WEIGHT,
+    SPECIAL_ABILITIES,
 )
+
+# ---------------------------------------------------------------------------
+# Population dynamics constants
+# ---------------------------------------------------------------------------
+
+POPULATION_GROWTH_RATE = 0.02       # 2% per cycle when thriving
+POPULATION_STABLE_RATE = 0.00       # 0% when moderate
+POPULATION_DECLINE_RATE = 0.03      # 3% per cycle under stress
+POPULATION_COLLAPSE_RATE = 0.10     # 10% per cycle near collapse
+POPULATION_MIN = 10                 # absolute minimum — allows collapse scenarios
+POPULATION_MAX_MULTIPLIER = 3.0     # max 3x starting population
+
+THRIVING_THRESHOLD = 50             # avg resources above this -> grow (was 60, too high)
+STRESS_THRESHOLD = 25               # avg resources below this -> decline (was 30)
+COLLAPSE_RESOURCE_THRESHOLD = 10    # avg resources below this -> collapse rate (was 15)
 
 
 # ===========================================================================
@@ -54,6 +70,9 @@ class Region:
 
         # Population
         self.population = float(population)
+        self.starting_population = float(population)  # locked at init for max-cap calc
+        self.population_change = 0
+        self.population_change_ratio = 0.0
 
         # Health
         self.health_score = 100.0
@@ -75,7 +94,7 @@ class Region:
             "aggress": INITIAL_WEIGHT,
         }
 
-        # Trust scores toward every OTHER region (0–100 scale)
+        # Trust scores toward every OTHER region (0-100 scale)
         self.trust_scores = {
             r: INITIAL_TRUST for r in REGIONS if r != region_id
         }
@@ -88,6 +107,111 @@ class Region:
         # Status flags
         self.is_collapsed = False
         self.trade_open = True
+
+        # Special ability — unique per-region passive/active edge
+        self.special_ability = SPECIAL_ABILITIES.get(region_id, {})
+
+        # Urbanex manufacturing capacity (China's manufacturing economy leverage)
+        if region_id == "urbanex":
+            self.manufacturing_power = float(
+                self.special_ability.get("initial_value", 85)
+            )
+        else:
+            self.manufacturing_power = 0.0
+
+    # -----------------------------------------------------------------------
+    # METHOD 0a - Apply Special Ability (call once per cycle, after consume)
+    # -----------------------------------------------------------------------
+
+    def apply_special_ability(self):
+        """
+        Apply this region's unique special ability once per cycle.
+        Called AFTER consume() so regen offsets consumption naturally.
+
+        - water_regeneration  (Aquaria):  +2.0 water/cycle — Amazon river
+        - food_regeneration   (Agrovia):  +3.0 food/cycle if land > 30 — monsoon
+        - energy_regeneration (Petrozon): +1.5 energy/cycle — oil extraction
+        - manufacturing_power (Urbanex):  handled in trade.py — no passive regen
+        - land_development    (Terranova): handled in agent invest logic
+        """
+        ability = self.special_ability.get("ability")
+
+        if ability == "water_regeneration":
+            # Amazon basin: water cycle replenishes reserves naturally
+            regen = self.special_ability.get("regen_rate", 2.0)
+            self.water = min(100.0, self.water + regen)
+
+        elif ability == "food_regeneration":
+            # Monsoon agriculture: requires cultivated land to function
+            land_threshold = self.special_ability.get("land_threshold", 30)
+            if self.land > land_threshold:
+                regen = self.special_ability.get("regen_rate", 3.0)
+                self.food = min(100.0, self.food + regen)
+
+        elif ability == "energy_regeneration":
+            # Oil reserve: passive extraction replenishes energy baseline
+            regen = self.special_ability.get("regen_rate", 1.5)
+            self.energy = min(100.0, self.energy + regen)
+
+        elif ability == "manufacturing_power":
+            # Manufacturing leverage handled per-trade in trade.py
+            pass
+
+        elif ability == "land_development":
+            # Investment multiplier applied during agent invest decisions
+            pass
+
+    # -----------------------------------------------------------------------
+    # METHOD 0b - Update Population (call AFTER consume, BEFORE calculate_health)
+    # -----------------------------------------------------------------------
+
+    def update_population(self):
+        """
+        Update population based on average resource level.
+        Called once per cycle after consume() completes.
+
+        Logic:
+        - Thriving  (avg > 60): grow 2% per cycle
+        - Stable    (avg 30-60): no change
+        - Stressed  (avg 15-30): decline 3% per cycle
+        - Collapsing (avg < 15): decline 10% per cycle
+
+        Population is clamped between POPULATION_MIN
+        and starting_population * POPULATION_MAX_MULTIPLIER.
+        """
+        avg_resources = (
+            self.water + self.food +
+            self.energy + self.land
+        ) / 4
+
+        if avg_resources > THRIVING_THRESHOLD:
+            growth_rate = POPULATION_GROWTH_RATE
+        elif avg_resources > STRESS_THRESHOLD:
+            growth_rate = POPULATION_STABLE_RATE
+        elif avg_resources > COLLAPSE_RESOURCE_THRESHOLD:
+            growth_rate = -POPULATION_DECLINE_RATE
+        else:
+            growth_rate = -POPULATION_COLLAPSE_RATE
+
+        old_population = self.population
+        self.population = self.population * (1 + growth_rate)
+
+        # Clamp population between min and max
+        max_population = self.starting_population * POPULATION_MAX_MULTIPLIER
+        self.population = max(
+            float(POPULATION_MIN),
+            min(self.population, max_population)
+        )
+
+        # Round to whole number
+        self.population = round(self.population)
+
+        # Track population change for reward calculation
+        self.population_change = self.population - old_population
+        self.population_change_ratio = (
+            self.population_change / old_population
+            if old_population > 0 else 0
+        )
 
     # -----------------------------------------------------------------------
     # METHOD 1 — Consume Resources
@@ -103,6 +227,8 @@ class Region:
             - 1 resource hits 0  → population × 0.98
             - Minimum population is always 10
         """
+        # Dynamic population drives drain: bigger population = more consumption.
+        # update_population() (called next) owns all pop growth/decline logic.
         drain_multiplier = self.population / 1000.0
         depleted_count = 0
 
@@ -119,14 +245,9 @@ class Region:
             # Apply drain and clamp immediately (per resource)
             setattr(self, resource, max(0.0, new_value))
 
-        # Population adjustment based on depletion
-        if depleted_count >= 2:
-            self.population *= 0.95
-        elif depleted_count == 1:
-            self.population *= 0.98
-
-        # Population floor
-        self.population = max(10.0, self.population)
+        # NOTE: population adjustment REMOVED from here.
+        # update_population() runs next in world.py and owns all pop dynamics.
+        # Keeping the old depletion-based pop adjustment here caused double-counting.
 
     # -----------------------------------------------------------------------
     # METHOD 2 — Apply Climate Event
@@ -183,8 +304,22 @@ class Region:
             Updated health_score.
         """
         avg_resource = (self.water + self.food + self.energy + self.land) / 4.0
-        pop_factor = min(self.population / 1000.0, 2.0) * 10.0
         trade_bonus = 5.0 if self.trade_open else 0.0
+
+        # Population pressure: reward stable/declining pop during resource stress,
+        # reward growth when resources are plentiful.
+        if avg_resource > STRESS_THRESHOLD:
+            # Resources OK — population growth is good
+            pop_factor = min(
+                self.population / self.starting_population,
+                2.0
+            ) * 10.0
+        else:
+            # Resources stressed — large population is a burden
+            pop_factor = max(
+                0.0,
+                10.0 - ((self.population / self.starting_population) * 5.0)
+            )
 
         health = (avg_resource * 0.7) + pop_factor + trade_bonus
         health = min(100.0, max(0.0, health))
@@ -223,6 +358,10 @@ class Region:
             "energy": round(self.energy, 2),
             "land": round(self.land, 2),
             "population": round(self.population, 0),
+            "population_change": self.population_change,
+            "population_change_ratio": round(self.population_change_ratio, 4),
+            "starting_population": self.starting_population,
+            "manufacturing_power": round(self.manufacturing_power, 1),
             "health_score": self.health_score,
             "is_collapsed": self.is_collapsed,
             "trade_open": self.trade_open,
@@ -261,6 +400,7 @@ class Region:
             "energy": round(self.energy, 2),
             "land": round(self.land, 2),
             "population": round(self.population, 0),
+            "population_change": self.population_change,
             "health_score": self.health_score,
             "last_action": self.last_action,
             "strategy_label": self.strategy_label,
@@ -326,6 +466,9 @@ class Region:
         self.energy = float(initial_data["energy"])
         self.land = float(initial_data["land"])
         self.population = float(initial_data["population"])
+        self.starting_population = float(initial_data["population"])
+        self.population_change = 0
+        self.population_change_ratio = 0.0
 
         self.health_score = 100.0
         self.history = []
@@ -347,6 +490,15 @@ class Region:
         self.last_reward = 0.0
         self.is_collapsed = False
         self.trade_open = True
+
+        # Reset special ability state
+        self.special_ability = SPECIAL_ABILITIES.get(self.region_id, {})
+        if self.region_id == "urbanex":
+            self.manufacturing_power = float(
+                self.special_ability.get("initial_value", 85)
+            )
+        else:
+            self.manufacturing_power = 0.0
 
 
 # ===========================================================================
@@ -485,6 +637,88 @@ if __name__ == "__main__":
     for entry in r5.history:
         print(f"    Cycle {entry['cycle']}: W={entry['water']:.1f} F={entry['food']:.1f} "
               f"E={entry['energy']:.1f} HP={entry['health_score']}")
+    print()
+
+    # ===================================================================
+    # TEST 6 — Thriving region grows (NEW population dynamics)
+    # ===================================================================
+    print("=" * 60)
+    print("  TEST 6 - Thriving Region Grows (Aquaria, all resources=80)")
+    print("=" * 60)
+
+    r6 = Region("aquaria", water=80, food=80, energy=80, land=80, population=500)
+    print(f"  Start: population={r6.population}")
+    for i in range(1, 11):
+        r6.update_population()
+        print(f"  Cycle {i:2d}: population={r6.population}  change={r6.population_change:+.0f}")
+    grew = r6.population > 500
+    print(f"  Population grew? {PASS if grew else FAIL}")
+    print()
+
+    # ===================================================================
+    # TEST 7 — Stressed region declines
+    # ===================================================================
+    print("=" * 60)
+    print("  TEST 7 - Stressed Region Declines (Urbanex, all resources=25)")
+    print("=" * 60)
+
+    r7 = Region("urbanex", water=25, food=25, energy=25, land=25, population=950)
+    print(f"  Start: population={r7.population}")
+    for i in range(1, 11):
+        r7.update_population()
+        print(f"  Cycle {i:2d}: population={r7.population}  change={r7.population_change:+.0f}")
+    declined = r7.population < 950
+    print(f"  Population declined? {PASS if declined else FAIL}")
+    print()
+
+    # ===================================================================
+    # TEST 8 — Collapsing region rapid decline
+    # ===================================================================
+    print("=" * 60)
+    print("  TEST 8 - Collapsing Region (all resources=10)")
+    print("=" * 60)
+
+    r8 = Region("petrozon", water=10, food=10, energy=10, land=10, population=450)
+    print(f"  Start: population={r8.population}")
+    for i in range(1, 6):
+        r8.update_population()
+        print(f"  Cycle {i}: population={r8.population}  change={r8.population_change:+.0f}")
+    rapid = r8.population < 400
+    print(f"  Rapid decline? {PASS if rapid else FAIL}")
+    print()
+
+    # ===================================================================
+    # TEST 9 — Population cap enforced
+    # ===================================================================
+    print("=" * 60)
+    print("  TEST 9 - Population Cap (Terranova start=400, max=1200)")
+    print("=" * 60)
+
+    r9 = Region("terranova", water=90, food=90, energy=90, land=90, population=400)
+    for _ in range(50):
+        r9.update_population()
+    cap = 400 * POPULATION_MAX_MULTIPLIER
+    capped = r9.population <= cap
+    print(f"  After 50 cycles: population={r9.population}  cap={cap:.0f}")
+    print(f"  Cap enforced? {PASS if capped else FAIL}")
+    print()
+
+    # ===================================================================
+    # TEST 10 — to_dict() includes new population fields
+    # ===================================================================
+    print("=" * 60)
+    print("  TEST 10 - to_dict() New Population Fields")
+    print("=" * 60)
+
+    r10 = Region("aquaria", water=80, food=80, energy=80, land=80, population=500)
+    r10.update_population()
+    d10 = r10.to_dict()
+    has_change = "population_change" in d10
+    has_ratio = "population_change_ratio" in d10
+    has_start = "starting_population" in d10
+    print(f"  population_change present?       {PASS if has_change else FAIL}  => {d10.get('population_change')}")
+    print(f"  population_change_ratio present? {PASS if has_ratio else FAIL}  => {d10.get('population_change_ratio')}")
+    print(f"  starting_population present?     {PASS if has_start else FAIL}  => {d10.get('starting_population')}")
     print()
 
     # ===================================================================

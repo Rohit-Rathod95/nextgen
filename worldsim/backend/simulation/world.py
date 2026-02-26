@@ -154,6 +154,17 @@ class World:
         for region in regions_list:
             region.consume()
 
+        # ── Phase 2b: Special Abilities ────────────────────────────
+        # Regen runs AFTER consume so it offsets depletion naturally.
+        # Aquaria +2 water, Agrovia +3 food, Petrozon +1.5 energy per cycle.
+        for region in regions_list:
+            region.apply_special_ability()
+
+        # ── Phase 2c: Population Dynamics ─────────────────────────
+        # Runs AFTER consume+regen so avg_resources reflects true state.
+        for region in regions_list:
+            region.update_population()
+
         # ── Phase 3: Agent Decisions ───────────────────────────────
         for region_id, agent in self.agents.items():
             region = self.regions[region_id]
@@ -180,7 +191,8 @@ class World:
             region.last_action = action
 
         # ── Phase 4: Trade Phase ───────────────────────────────────
-        trade_events = run_trade_phase(regions_list)
+        # Pass cycle so distant-pair distance penalty applies after cycle 30.
+        trade_events = run_trade_phase(regions_list, cycle=self.cycle)
         for event in trade_events:
             event["cycle"] = self.cycle
             self.events_this_cycle.append(event)
