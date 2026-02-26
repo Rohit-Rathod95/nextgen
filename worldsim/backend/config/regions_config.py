@@ -41,7 +41,7 @@ INITIAL_WEIGHT = 0.25  # Starting weight for each of 4 strategies
 # ---------------------------------------------------------------------------
 
 CYCLE_SPEED = 1.0
-TOTAL_CYCLES = 100
+TOTAL_CYCLES = 20
 CLIMATE_EVENT_PROBABILITY = 0.30   # 30% chance per cycle (higher to force more climate events)
 
 # ---------------------------------------------------------------------------

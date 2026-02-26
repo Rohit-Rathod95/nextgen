@@ -1,8 +1,7 @@
-// WorldMap component — real SVG world map with territory highlighting,
-// geographic region pins, animated pulse rings, hover tooltips, and sci-fi WorldSim aesthetic.
 import React, { useMemo, useState, useCallback } from 'react';
 import { ComposableMap, Geographies, Geography, Marker } from 'react-simple-maps';
 import { GLOBAL_CONSTANTS } from '../constants/regions_meta';
+import TradeLines from './TradeLines';
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 
@@ -259,6 +258,10 @@ export default function WorldMap({ regions, activeTrades, onRegionSelect, select
                             })
                         }
                     </Geographies>
+
+                    {/* ── Animated Trade Arcs ─────────────────────────────────────── */}
+                    <TradeLines lastEvents={activeTrades} />
+
                     {/* ── Region Pins ─────────────────────────────────────────────── */}
                     {Object.entries(REGION_CONFIG).map(([name, cfg]) => {
                         const rc = REGION_TERRITORIES[name];

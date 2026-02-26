@@ -1,7 +1,7 @@
 // Regions metadata — static display properties + locked initial values
 
 export const GLOBAL_CONSTANTS = {
-    TOTAL_CYCLES: 100,
+    TOTAL_CYCLES: 20,
     CLIMATE_PROBABILITY: 0.15,
     TRADE_THRESHOLD: 60,       // matches backend surplus threshold (>60)
     DEFICIT_THRESHOLD: 40,     // matches backend deficit threshold (<40)

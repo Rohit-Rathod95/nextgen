@@ -1,5 +1,5 @@
 // Timeline component — cycle progress bar, world state control strip, and API control buttons.
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { GLOBAL_CONSTANTS } from '../constants/regions_meta';
 
 const { TOTAL_CYCLES } = GLOBAL_CONSTANTS;
@@ -28,32 +28,118 @@ async function apiCall(endpoint) {
 export default function Timeline({ worldState, isFirebaseReady }) {
     const { current_cycle = 0, current_event = 'None', is_running = false } = worldState || {};
 
+    // Local running state — pre-set optimistically & overridden by Firestore truth
+    const [isRunning, setIsRunning] = useState(is_running);
+    const [isLoading, setIsLoading] = useState(false);
     const [apiError, setApiError] = useState(null);
-    const [loading, setLoading] = useState(false);
+
+    // Keep local isRunning in sync with Firestore is_running (source of truth)
+    useEffect(() => {
+        setIsRunning(is_running);
+    }, [is_running]);
+
+    // Auto-dismiss error banner after 4 seconds
+    useEffect(() => {
+        if (!apiError) return;
+        const t = setTimeout(() => setApiError(null), 4000);
+        return () => clearTimeout(t);
+    }, [apiError]);
 
     const pct = Math.min(100, (current_cycle / TOTAL_CYCLES) * 100);
     const eventCfg = EVENT_TYPE_COLORS[current_event] || { icon: '🌍', color: '#94a3b8' };
     const simDone = current_cycle >= TOTAL_CYCLES;
 
-    const statusLabel = simDone ? 'COMPLETE' : is_running ? 'RUNNING' : 'PAUSED';
-    const statusColor = simDone ? '#4ade80' : is_running ? '#38bdf8' : '#f59e0b';
+    const statusLabel = simDone ? 'COMPLETE' : isRunning ? 'RUNNING' : 'PAUSED';
+    const statusColor = simDone ? '#4ade80' : isRunning ? '#38bdf8' : '#f59e0b';
 
-    const handleApi = useCallback(async (endpoint) => {
-        setLoading(true);
+    // Cyan -> Amber -> Red transition
+    const ringColor = pct < 40 ? '#0ea5e9' : pct < 75 ? '#f59e0b' : '#ef4444';
+
+    // ── Start ──────────────────────────────────────────────────────────────────
+    const handleStart = useCallback(async () => {
+        if (isRunning || isLoading) return;   // hard guard — prevent double calls
+        setIsLoading(true);
         setApiError(null);
+        setIsRunning(true);                   // optimistic update
         try {
-            await apiCall(endpoint);
+            await apiCall('/start');
         } catch (e) {
             setApiError(e.message);
+            setIsRunning(false);              // rollback on error
         } finally {
-            setLoading(false);
+            setIsLoading(false);
         }
-    }, []);
+    }, [isRunning, isLoading]);
+
+    // ── Pause ──────────────────────────────────────────────────────────────────
+    const handlePause = useCallback(async () => {
+        if (!isRunning || isLoading) return;
+        setIsLoading(true);
+        setApiError(null);
+        setIsRunning(false);
+        try {
+            await apiCall('/pause');
+        } catch (e) {
+            setApiError(e.message);
+            setIsRunning(true);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [isRunning, isLoading]);
+
+    // ── Resume ─────────────────────────────────────────────────────────────────
+    const handleResume = useCallback(async () => {
+        if (isRunning || isLoading) return;
+        setIsLoading(true);
+        setApiError(null);
+        setIsRunning(true);
+        try {
+            await apiCall('/resume');
+        } catch (e) {
+            setApiError(e.message);
+            setIsRunning(false);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [isRunning, isLoading]);
+
+    // ── Stop ───────────────────────────────────────────────────────────────────
+    const handleStop = useCallback(async () => {
+        if (!isRunning || isLoading) return;
+        setIsLoading(true);
+        setApiError(null);
+        setIsRunning(false);
+        try {
+            await apiCall('/stop');
+        } catch (e) {
+            setApiError(e.message);
+            setIsRunning(true);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [isRunning, isLoading]);
+
+    // ── Restart (after simDone) ────────────────────────────────────────────────
+    const handleRestart = useCallback(async () => {
+        if (isLoading) return;
+        setIsLoading(true);
+        setApiError(null);
+        setIsRunning(true);
+        try {
+            await apiCall('/start');
+        } catch (e) {
+            setApiError(e.message);
+            setIsRunning(false);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [isLoading]);
 
     return (
         <div className="glass rounded-xl px-4 py-3 flex flex-col gap-2">
             {/* Top bar */}
             <div className="flex items-center justify-between gap-4 flex-wrap">
+
                 {/* Connection indicator */}
                 <div className="flex items-center gap-2">
                     <div
@@ -68,15 +154,47 @@ export default function Timeline({ worldState, isFirebaseReady }) {
                     </span>
                 </div>
 
-                {/* World title */}
-                <div className="flex items-center gap-2">
-                    <span className="text-lg">🌍</span>
-                    <span className="text-sm font-bold tracking-widest text-slate-200">WORLDSIM</span>
+                {/* World title & Cycle Ring */}
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                        <span className="text-lg">🌍</span>
+                        <span className="text-sm font-bold tracking-widest text-slate-200">WORLDSIM</span>
+                    </div>
+
+                    {/* Circular Progress Ring */}
+                    <div className="relative flex items-center justify-center w-9 h-9">
+                        <svg className="w-9 h-9 -rotate-90 transform" viewBox="0 0 36 36">
+                            <circle
+                                cx="18"
+                                cy="18"
+                                r="15"
+                                fill="none"
+                                className="stroke-slate-800"
+                                strokeWidth="2.5"
+                            />
+                            <circle
+                                cx="18"
+                                cy="18"
+                                r="15"
+                                fill="none"
+                                stroke={ringColor}
+                                strokeWidth="2.5"
+                                strokeDasharray={94.248}
+                                strokeDashoffset={94.248 - (pct / 100) * 94.248}
+                                strokeLinecap="round"
+                                className="transition-all duration-700 ease-in-out"
+                            />
+                        </svg>
+                        <div className="absolute flex items-center justify-center mt-0.5">
+                            <span className="text-[10px] font-bold font-mono tracking-tighter" style={{ color: ringColor }}>
+                                {Math.floor(pct)}
+                            </span>
+                        </div>
+                    </div>
                 </div>
 
-                {/* Status + cycle */}
+                {/* Status + Event */}
                 <div className="flex items-center gap-3">
-                    {/* Current climate event badge */}
                     {current_event && current_event !== 'None' && (
                         <div
                             className="flex items-center gap-1.5 text-xs px-2 py-1 rounded"
@@ -87,19 +205,11 @@ export default function Timeline({ worldState, isFirebaseReady }) {
                         </div>
                     )}
 
-                    {/* Cycle counter */}
-                    <div className="text-xs font-mono text-slate-300">
-                        Cycle{' '}
-                        <span className="text-white font-bold">{current_cycle}</span>
-                        <span className="text-slate-500"> / {TOTAL_CYCLES}</span>
-                    </div>
-
-                    {/* Status badge */}
                     <div
                         className="text-xs font-mono px-2.5 py-1 rounded-full font-semibold flex items-center gap-1.5"
                         style={{ background: `${statusColor}20`, color: statusColor }}
                     >
-                        {is_running && !simDone && (
+                        {isRunning && !simDone && (
                             <span
                                 className="inline-block w-1.5 h-1.5 rounded-full"
                                 style={{ background: statusColor, animation: 'pulse 1.5s ease-in-out infinite' }}
@@ -111,83 +221,96 @@ export default function Timeline({ worldState, isFirebaseReady }) {
 
                 {/* ─── API Control Buttons ─── */}
                 <div className="flex items-center gap-2 ml-auto">
-                    {!is_running && !simDone && (
+
+                    {/* START — only when not running, not done */}
+                    {!isRunning && !simDone && (
                         <button
-                            onClick={() => handleApi('/start')}
-                            disabled={loading}
-                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40"
+                            onClick={handleStart}
+                            disabled={isLoading}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{
                                 background: 'linear-gradient(135deg, #0ea5e9, #6366f1)',
                                 color: '#fff',
                                 boxShadow: '0 0 12px #6366f140',
                             }}
                         >
-                            {loading ? '…' : '▶ Start'}
+                            {isLoading ? '⏳ STARTING…' : '▶ Start'}
                         </button>
                     )}
-                    {is_running && (
+
+                    {/* PAUSE — only when running */}
+                    {isRunning && !simDone && (
                         <button
-                            onClick={() => handleApi('/pause')}
-                            disabled={loading}
-                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40"
+                            onClick={handlePause}
+                            disabled={isLoading}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{
                                 background: '#f59e0b20',
                                 border: '1px solid #f59e0b50',
                                 color: '#f59e0b',
                             }}
                         >
-                            {loading ? '…' : '⏸ Pause'}
+                            {isLoading ? '⏳ PAUSING…' : '⏸ Pause'}
                         </button>
                     )}
-                    {!is_running && current_cycle > 0 && !simDone && (
+
+                    {/* RESUME — when paused mid-sim */}
+                    {!isRunning && current_cycle > 0 && !simDone && (
                         <button
-                            onClick={() => handleApi('/resume')}
-                            disabled={loading}
-                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40"
+                            onClick={handleResume}
+                            disabled={isLoading}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{
                                 background: '#4ade8020',
                                 border: '1px solid #4ade8050',
                                 color: '#4ade80',
                             }}
                         >
-                            {loading ? '…' : '▶ Resume'}
+                            {isLoading ? '⏳ RESUMING…' : '▶ Resume'}
                         </button>
                     )}
-                    {(is_running || current_cycle > 0) && !simDone && (
+
+                    {/* STOP — when running or mid-sim */}
+                    {(isRunning || current_cycle > 0) && !simDone && (
                         <button
-                            onClick={() => handleApi('/stop')}
-                            disabled={loading}
-                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40"
+                            onClick={handleStop}
+                            disabled={isLoading}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{
                                 background: '#ef444420',
                                 border: '1px solid #ef444450',
                                 color: '#ef4444',
                             }}
                         >
-                            {loading ? '…' : '■ Stop'}
+                            {isLoading ? '⏳ STOPPING…' : '■ Stop'}
                         </button>
                     )}
+
+                    {/* RESTART — sim complete */}
                     {simDone && (
                         <button
-                            onClick={() => handleApi('/start')}
-                            disabled={loading}
-                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40"
+                            onClick={handleRestart}
+                            disabled={isLoading}
+                            className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
                             style={{
                                 background: 'linear-gradient(135deg, #4ade80, #0ea5e9)',
                                 color: '#0f172a',
                             }}
                         >
-                            {loading ? '…' : '🔄 Restart'}
+                            {isLoading ? '⏳ STARTING…' : '🔄 Restart'}
                         </button>
                     )}
                 </div>
             </div>
 
-            {/* API error banner */}
+            {/* API error banner — auto-dismisses after 4s */}
             {apiError && (
-                <div className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded px-3 py-1.5 flex justify-between">
+                <div className="text-xs text-red-400 bg-red-900/20 border border-red-700/30 rounded px-3 py-1.5 flex justify-between items-center">
                     <span>⚠ Backend error: {apiError}</span>
-                    <button onClick={() => setApiError(null)} className="text-red-500 hover:text-red-300 ml-2">✕</button>
+                    <button
+                        onClick={() => setApiError(null)}
+                        className="text-red-500 hover:text-red-300 ml-2 leading-none"
+                    >✕</button>
                 </div>
             )}
 

@@ -51,6 +51,13 @@ async def lifespan(app: FastAPI):
     """Setup on startup, cleanup on shutdown."""
     logger.info("WorldSim API starting up...")
     world.setup()
+    
+    # Force reset Firestore state so frontend doesn't get stuck with ghost runs
+    try:
+        world.initialize_firestore()
+    except Exception as exc:
+        logger.warning("Firestore init skipped on startup (no credentials): %s", exc)
+        
     logger.info("World initialized with %d regions.", len(world.regions))
     yield
     # Shutdown
@@ -196,15 +203,17 @@ async def stop_simulation():
     """Stop the simulation entirely."""
     global simulation_task
 
-    if not world.is_running:
-        raise HTTPException(
-            status_code=409, detail="No simulation is running.",
-        )
-
     world.stop()
 
     if simulation_task and not simulation_task.done():
         simulation_task.cancel()
+        
+    # Force sync Firestore state in case of frontend/backend desync
+    from services.firestore_service import write_world_state
+    try:
+        write_world_state(cycle=world.cycle, running=False, speed=world.speed)
+    except Exception as exc:
+        logger.warning("Failed to write manual stop to Firestore: %s", exc)
 
     return {
         "status": "stopped",
