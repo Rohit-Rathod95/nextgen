@@ -131,12 +131,12 @@ export default function App() {
             />
 
             {/* ═══ ANALYSIS OVERLAY ═══ */}
-            {showAnalysis && (
-                <AnalysisOverlay
-                    analysis={analysis}
-                    onClose={() => setShowAnalysis(false)}
-                />
-            )}
+            <AnalysisOverlay
+                analysis={analysis}
+                regions={regions}
+                onClose={() => setShowAnalysis(false)}
+                isVisible={showAnalysis}
+            />
         </div>
     );
 }

@@ -74,12 +74,16 @@ def initialize_firebase() -> firestore.Client:
         # No app exists yet - initialize a new one
         try:
             cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+            # Use the project ID from credentials if the environment variable
+            # doesn't match. This prevents 403 errors when the service account
+            # belongs to a different Firebase project than the default.
+            actual_project = getattr(cred, 'project_id', None) or PROJECT_ID
             firebase_admin.initialize_app(cred, {
-                "projectId": PROJECT_ID,
+                "projectId": actual_project,
             })
             logger.info(
                 "Firebase Admin SDK initialized successfully "
-                "(project: %s).", PROJECT_ID
+                "(project: %s).", actual_project
             )
 
         except FileNotFoundError:

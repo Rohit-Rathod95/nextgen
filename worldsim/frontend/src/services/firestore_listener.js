@@ -1,8 +1,6 @@
 // Firestore listener — subscribes to real-time Firestore snapshots for live simulation updates.
 // All normalization of backend field formats happens HERE so components always see a clean contract.
-import { initializeApp } from 'firebase/app';
 import {
-    getFirestore,
     collection,
     doc,
     onSnapshot,
@@ -11,29 +9,18 @@ import {
     limit,
 } from 'firebase/firestore';
 import { useState, useEffect } from 'react';
+import { db } from '../config/firebaseConfig';
 import { REGIONS_INITIAL } from '../constants/regions_meta';
 
-// Firebase config — populated from environment variables (see .env.template)
-const firebaseConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: import.meta.env.VITE_FIREBASE_APP_ID,
-};
-
-let app, db;
 let isFirebaseReady = false;
 
 try {
-    if (firebaseConfig.projectId) {
-        app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
+    if (db && db.app?.options?.projectId) {
         isFirebaseReady = true;
+        console.log('[firestore_listener] Firebase ready');
     }
-} catch (e) {
-    console.warn('[WorldSim] Firebase not configured — running in demo mode with initial values.');
+} catch (err) {
+    console.warn('[firestore_listener] Firebase not ready:', err.message);
 }
 
 // ─── Normalization Helpers ────────────────────────────────────────────────────
