@@ -1,0 +1,115 @@
+/* stylelint-disable at-rule-no-unknown */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-aquaria: #38bdf8;
+  --color-agrovia: #4ade80;
+  --color-petrozon: #f59e0b;
+  --color-urbanex: #c084fc;
+  --color-terranova: #f87171;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background-color: #0f172a;
+  color: #e2e8f0;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Glassmorphism utility */
+.glass {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(51, 65, 85, 0.5);
+}
+
+/* Glow utilities */
+.glow-aquaria {
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.35);
+}
+
+.glow-agrovia {
+  box-shadow: 0 0 16px rgba(74, 222, 128, 0.35);
+}
+
+.glow-petrozon {
+  box-shadow: 0 0 16px rgba(245, 158, 11, 0.35);
+}
+
+.glow-urbanex {
+  box-shadow: 0 0 16px rgba(192, 132, 252, 0.35);
+}
+
+.glow-terranova {
+  box-shadow: 0 0 16px rgba(248, 113, 113, 0.35);
+}
+
+/* Pulse ring animation for climate events */
+@keyframes ping-slow {
+  0% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.ping-ring {
+  animation: ping-slow 1.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Event feed slide-in */
+@keyframes slideInDown {
+  from {
+    transform: translateY(-12px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.event-enter {
+  animation: slideInDown 0.35s ease-out;
+}
+
+/* Bar transition */
+.bar-fill {
+  transition: width 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
