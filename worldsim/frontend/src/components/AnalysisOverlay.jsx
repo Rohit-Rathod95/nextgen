@@ -1,5 +1,14 @@
-// AnalysisOverlay component — modal overlay displaying auto-generated strategic insights after simulation ends.
-import React from 'react';
+// Region ID -> display label with real-world mapping
+const REAL_WORLD_LABELS = {
+    aquaria: 'Aquaria (Brazil)',
+    agrovia: 'Agrovia (India)',
+    petrozon: 'Petrozon (Gulf States)',
+    urbanex: 'Urbanex (China)',
+    terranova: 'Terranova (Africa)',
+};
+
+const getLabel = (regionId) =>
+    REAL_WORLD_LABELS[regionId?.toLowerCase()] || regionId;
 
 function InsightCard({ text, index }) {
     const colors = ['#38bdf8', '#4ade80', '#f59e0b', '#c084fc', '#f87171', '#34d399'];
@@ -18,14 +27,12 @@ function InsightCard({ text, index }) {
 }
 
 function CollapseCard({ region, index }) {
-    // collapsed_region may be a string (region name) or a dict { region_id, cause, collapse_cycle }
     const colors = ['#ef4444', '#f97316', '#f59e0b', '#ec4899', '#a78bfa'];
     const c = colors[index % colors.length];
 
     const name = typeof region === 'string'
         ? region
         : (region.region_id || region.region || 'Unknown');
-
     const cause = typeof region === 'object' ? region.cause : null;
     const cycle = typeof region === 'object' ? region.collapse_cycle : null;
 
@@ -36,7 +43,7 @@ function CollapseCard({ region, index }) {
         >
             <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm px-2 py-0.5 rounded font-mono bg-red-900/30 text-red-400">
-                    💀 {name.charAt(0).toUpperCase() + name.slice(1)}
+                    💀 {getLabel(name)}
                 </span>
                 {cycle && (
                     <span className="text-xs text-slate-500 font-mono">cycle {cycle}</span>
@@ -53,28 +60,51 @@ function ClusterBadge({ cluster, index }) {
     const colors = ['#38bdf8', '#4ade80', '#f59e0b', '#c084fc', '#f87171'];
     const c = colors[index % colors.length];
 
-    // cluster may be an array of region names, or a dict { regions: [...], ... }
-    const members = Array.isArray(cluster)
-        ? cluster
-        : (cluster.regions || cluster.partners || [cluster].flat());
+    // cluster may be an array of region IDs or { regions: [...], formed_at, duration }
+    let members = [];
+    let formedAt = null;
+    let duration = null;
+
+    if (Array.isArray(cluster)) {
+        members = cluster;
+    } else if (typeof cluster === 'object' && cluster !== null) {
+        members = cluster.regions || cluster.partners || [];
+        formedAt = cluster.formed_at;
+        duration = cluster.duration;
+    } else {
+        members = [];
+    }
+
+    // Display as "Petrozon + Urbanex" with full labels
+    const displayName = members
+        .filter(r => r)
+        .map(r => getLabel(r))
+        .join(' + ');
 
     return (
         <div
-            className="flex flex-wrap gap-1.5 p-2 rounded-lg border"
+            className="p-3 rounded-lg border flex flex-col gap-1.5"
             style={{ background: `${c}10`, borderColor: `${c}25` }}
         >
-            {members.map((name) => (
+            <div className="flex flex-wrap items-center gap-2">
                 <span
-                    key={name}
-                    className="text-xs px-2 py-0.5 rounded font-mono capitalize"
-                    style={{ background: `${c}20`, color: c }}
+                    className="text-sm font-semibold"
+                    style={{ color: c }}
                 >
-                    {name}
+                    🤝 {displayName}
                 </span>
-            ))}
+            </div>
+            {(formedAt != null || duration != null) && (
+                <div className="text-xs text-slate-400 font-mono">
+                    {formedAt != null && `formed cycle ${formedAt}`}
+                    {formedAt != null && duration != null && ' · '}
+                    {duration != null && `${duration} cycles`}
+                </div>
+            )}
         </div>
     );
 }
+
 
 export default function AnalysisOverlay({ analysis, onClose }) {
     if (!analysis) return null;

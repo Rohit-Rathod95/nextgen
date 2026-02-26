@@ -201,11 +201,10 @@ def _build_collapse_description(region_id: str, cycle: int,
 
 def detect_alliances(cycle_logs: list) -> list:
     """
-    Find region pairs that traded successfully for 5 or more
-    consecutive cycles, indicating a stable trade alliance.
+    Find region pairs that successfully traded for 5+ consecutive cycles.
 
-    Tracks consecutive trade counters per region pair across
-    all cycle logs using the regions_snapshot last_action fields.
+    Reads actual trade events from events_fired list in each cycle log.
+    This is accurate because run_trade_phase() always appends events.
 
     Args:
         cycle_logs: Sorted list of cycle log dicts.
@@ -214,88 +213,74 @@ def detect_alliances(cycle_logs: list) -> list:
         List of alliance dicts with regions, formed_at, duration,
         held_until_end, and description.
     """
-    # Track consecutive trades per pair: "regionA-regionB" → count
+    from config.regions_config import REGIONS
+
     consecutive = {}
-    # Track when alliance first formed
-    alliance_formed = {}
-    # Track peak durations
-    peak_duration = {}
-    # Track if pair traded in the final cycle
-    final_cycle_trades = set()
+    alliances = {}
 
-    all_regions = set()
+    for log in cycle_logs:
+        cycle_num = log.get("cycle", 0)
+        events = log.get("events_fired", [])
 
-    for log_idx, log in enumerate(cycle_logs):
-        snapshot = log.get("regions_snapshot", {})
-        cycle_num = log.get("cycle", log_idx + 1)
-        is_final = (log_idx == len(cycle_logs) - 1)
+        if not isinstance(events, list):
+            continue
 
-        # Collect all region IDs
-        for rid in snapshot:
-            all_regions.add(rid)
+        traded_pairs_this_cycle = set()
 
-        # Determine which pairs traded this cycle
-        trading_pairs = set()
-        for region_id, region_data in snapshot.items():
-            action = region_data.get("last_action", "none")
-            if action == "trade":
-                # Mark this region as trading — pair with all trading neighbors
-                for other_id, other_data in snapshot.items():
-                    if other_id != region_id:
-                        if other_data.get("last_action", "none") == "trade":
-                            pair_key = _pair_key(region_id, other_id)
-                            trading_pairs.add(pair_key)
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            if (
+                event.get("type") == "trade"
+                and event.get("outcome") == "trade_success"
+            ):
+                src = event.get("source_region", "")
+                tgt = event.get("target_region", "")
+                if src and tgt:
+                    pair = tuple(sorted([src, tgt]))
+                    traded_pairs_this_cycle.add(pair)
 
-        # Build all possible pairs for tracking
-        region_list = sorted(all_regions)
         all_pairs = set()
-        for i in range(len(region_list)):
-            for j in range(i + 1, len(region_list)):
-                all_pairs.add(_pair_key(region_list[i], region_list[j]))
+        for r1 in REGIONS:
+            for r2 in REGIONS:
+                if r1 < r2:
+                    all_pairs.add((r1, r2))
 
-        # Update consecutive counts
         for pair in all_pairs:
-            if pair in trading_pairs:
+            if pair in traded_pairs_this_cycle:
                 consecutive[pair] = consecutive.get(pair, 0) + 1
-
-                # Record alliance formation at threshold
-                if (consecutive[pair] >= ALLIANCE_CONSECUTIVE_THRESHOLD
-                        and pair not in alliance_formed):
-                    alliance_formed[pair] = cycle_num
-
-                # Track peak duration
-                current = consecutive[pair]
-                if current > peak_duration.get(pair, 0):
-                    peak_duration[pair] = current
-
-                if is_final:
-                    final_cycle_trades.add(pair)
+                if (
+                    consecutive[pair] >= ALLIANCE_CONSECUTIVE_THRESHOLD
+                    and pair not in alliances
+                ):
+                    alliances[pair] = {
+                        "formed_at": cycle_num,
+                        "duration": consecutive[pair]
+                    }
             else:
-                consecutive[pair] = 0
+                if pair in consecutive:
+                    consecutive[pair] = 0
 
-    # Build results for pairs that reached alliance threshold
-    alliances = []
-    for pair, formed_at in alliance_formed.items():
-        regions = pair.split("-")
-        duration = peak_duration.get(pair, ALLIANCE_CONSECUTIVE_THRESHOLD)
-        held = pair in final_cycle_trades
-
-        name_a = regions[0].capitalize()
-        name_b = regions[1].capitalize()
-
-        alliances.append({
-            "regions": regions,
-            "formed_at": formed_at,
+    result = []
+    for pair, data in alliances.items():
+        r1, r2 = pair
+        duration = consecutive.get(pair, 0)
+        result.append({
+            "regions": [r1, r2],
+            "formed_at": data["formed_at"],
             "duration": duration,
-            "held_until_end": held,
+            "held_until_end": duration > 0,
             "description": (
-                f"{name_a} and {name_b} formed a stable trade alliance "
-                f"from cycle {formed_at}, lasting {duration} cycles."
-            ),
+                f"{r1.capitalize()} and "
+                f"{r2.capitalize()} formed a "
+                f"stable trade alliance from "
+                f"cycle {data['formed_at']}, "
+                f"lasting {duration} cycles."
+            )
         })
 
-    logger.info("detect_alliances: found %d alliances.", len(alliances))
-    return alliances
+    logger.info("detect_alliances: found %d alliances.", len(result))
+    return result
 
 
 def _pair_key(a: str, b: str) -> str:
@@ -436,10 +421,10 @@ def generate_simulation_summary(cycle_logs: list, collapses: list,
     Returns:
         Summary paragraph string.
     """
-    total_cycles = len(cycle_logs)
-    collapse_count = len(collapses)
+    total_cycles    = len(cycle_logs)
+    collapse_count  = len(collapses)
     surviving_count = 5 - collapse_count
-    alliance_count = len(alliances)
+    alliance_count  = len(alliances)
 
     # Build collapsed names string
     if collapse_count > 0:
@@ -453,13 +438,15 @@ def generate_simulation_summary(cycle_logs: list, collapses: list,
     else:
         collapse_text = "No regions collapsed."
 
-    # Count climate events from cycle logs
+    # Count climate events from events_fired list in each cycle
     climate_count = 0
     for log in cycle_logs:
-        snapshot = log.get("regions_snapshot", {})
-        for region_data in snapshot.values():
-            hits = region_data.get("climate_hits_this_cycle", 0)
-            climate_count += hits
+        events = log.get("events_fired", [])
+        if isinstance(events, list):
+            for event in events:
+                if isinstance(event, dict):
+                    if event.get("type") == "climate":
+                        climate_count += 1
 
     return (
         f"WorldSim ran {total_cycles} cycles across 5 regions. "

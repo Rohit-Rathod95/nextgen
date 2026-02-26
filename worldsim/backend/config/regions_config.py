@@ -1,100 +1,154 @@
 """
-regions_config.py — Single Source of Truth for WorldSim
+regions_config.py - Single Source of Truth for WorldSim
 
 All simulation constants, starting values, consumption rates,
-neighbor maps, and region roles are defined here. Every other
-module imports from this file — no magic numbers elsewhere.
+neighbor maps, and region roles defined here. No magic numbers elsewhere.
 
-Region IDs are strictly lowercase throughout.
-Resource values use a 0-100 scale.
+Region IDs: strictly lowercase. Resources: 0-100 scale.
 """
 
 # ---------------------------------------------------------------------------
-# Region & Resource Definitions
+# Region & Resource Lists
 # ---------------------------------------------------------------------------
 
-REGIONS = ["aquaria", "agrovia", "petrozon", "urbanex", "terranova"]
-
+REGIONS  = ["aquaria", "agrovia", "petrozon", "urbanex", "terranova"]
 RESOURCES = ["water", "food", "energy", "land"]
-
-ACTIONS = ["trade", "hoard", "invest", "aggress"]
+ACTIONS   = ["trade", "hoard", "invest", "aggress"]
 
 # ---------------------------------------------------------------------------
 # Thresholds
 # ---------------------------------------------------------------------------
 
-CRITICAL_THRESHOLD = 30       # Resource below this -> flagged as critical
-EMERGENCY_THRESHOLD = 15      # Resource below this -> emergency hoard override (lowered from 20)
-COLLAPSE_THRESHOLD = 20       # Health below this -> region collapses
-SURPLUS_THRESHOLD = 55        # Resource above this -> tradeable surplus (lowered from 60)
-DEFICIT_THRESHOLD = 45        # Resource below this -> region needs this resource (raised from 40)
-TRADE_TRUST_MINIMUM = 30      # Minimum trust to propose trade (lowered from 40)
-RECEIVER_HAS_THRESHOLD = 35   # Receiver must have > this to give resource in trade
+CRITICAL_THRESHOLD  = 30    # Resource below this -> flagged critical
+EMERGENCY_THRESHOLD = 15    # Resource below this -> emergency override
+COLLAPSE_THRESHOLD  = 15    # Health below this -> collapse check
+COLLAPSE_POPULATION = 100   # Population below this -> collapse eligible
+
+SURPLUS_THRESHOLD   = 55    # Resource above this -> tradeable surplus
+DEFICIT_THRESHOLD   = 45    # Resource below this -> region needs it
+
+TRADE_TRUST_MINIMUM = 25    # Min trust to propose trade (global trade model)
 
 # ---------------------------------------------------------------------------
 # Agent Defaults
 # ---------------------------------------------------------------------------
 
-INITIAL_TRUST = 50            # Starting trust between all region pairs (0-100)
-INITIAL_WEIGHT = 0.25         # Starting weight for each of the 4 strategies
+INITIAL_TRUST  = 50    # Starting trust between all region pairs (0-100)
+INITIAL_WEIGHT = 0.25  # Starting weight for each of 4 strategies
 
 # ---------------------------------------------------------------------------
 # Simulation Timing
 # ---------------------------------------------------------------------------
 
-CYCLE_SPEED = 1.0             # Seconds between cycles (adjustable)
-TOTAL_CYCLES = 100            # Total simulation cycles per run
-CLIMATE_EVENT_PROBABILITY = 0.15  # 15% chance of climate event per cycle
+CYCLE_SPEED = 1.0
+TOTAL_CYCLES = 100
+CLIMATE_EVENT_PROBABILITY = 0.25   # 25% chance per cycle (raised for more events)
 
 # ---------------------------------------------------------------------------
-# Locked Starting Values (0-100 resource scale)
-# Tuned so every region has at least one clear need and one clear surplus,
-# ensuring trade pressure exists from cycle 1.
+# Population Dynamics (in region.py, not here — kept for cross-module ref)
+# ---------------------------------------------------------------------------
+
+POPULATION_GROWTH_RATE       = 0.02
+POPULATION_DECLINE_RATE      = 0.03
+POPULATION_COLLAPSE_RATE     = 0.10
+POPULATION_MIN               = 50
+THRIVING_THRESHOLD           = 60    # avg resources > this -> grow
+STRESS_THRESHOLD             = 30    # avg resources < this -> decline
+COLLAPSE_RESOURCE_THRESHOLD  = 15    # avg resources < this -> collapse rate
+
+# ---------------------------------------------------------------------------
+# Starting Values — tuned so every region has a clear surplus + deficit
 # ---------------------------------------------------------------------------
 
 INITIAL_REGIONS = {
     "aquaria": {
-        # Amazon basin: water rich, energy poor -> needs energy from Petrozon
+        # Brazil: water-rich, energy-poor -> strong pull towards Petrozon trade
         "water": 80, "food": 50, "energy": 25, "land": 60,
         "population": 500,
     },
     "agrovia": {
-        # South Asia: food rich, water moderate, energy poor
+        # India: food-rich, land-hungry, energy deficit
         "water": 40, "food": 85, "energy": 35, "land": 35,
         "population": 600,
     },
     "petrozon": {
-        # Middle East: energy rich, water/food very poor -> strong trade motivation
+        # Gulf States: energy-rich, water/food critical -> must trade or collapse
         "water": 25, "food": 30, "energy": 85, "land": 50,
         "population": 450,
     },
     "urbanex": {
-        # China: high population, moderate resources, manufacturing leverage
+        # China: high pop, moderate resources, manufacturing leverage
         "water": 35, "food": 40, "energy": 35, "land": 25,
         "population": 950,
     },
     "terranova": {
-        # Brazil interior: balanced, large land for investment
+        # Africa: land-rich, developing, balanced but plenty of room to grow
         "water": 50, "food": 55, "energy": 50, "land": 80,
         "population": 400,
     },
 }
 
 # ---------------------------------------------------------------------------
-# Per-Region Consumption Rates (resource units consumed per cycle at pop=1000)
+# Consumption Rates (units per 1000 population per cycle)
+# Raised to create real scarcity pressure and trade incentive
 # ---------------------------------------------------------------------------
 
 CONSUMPTION_RATES = {
-    "aquaria":   {"water": 0.8, "food": 0.6, "energy": 0.4, "land": 0.1},
-    "agrovia":   {"water": 0.6, "food": 0.9, "energy": 0.5, "land": 0.3},
-    "petrozon":  {"water": 0.5, "food": 0.4, "energy": 1.0, "land": 0.2},
-    "urbanex":   {"water": 1.0, "food": 0.9, "energy": 0.8, "land": 0.5},
-    "terranova": {"water": 0.6, "food": 0.6, "energy": 0.5, "land": 0.2},
+    "aquaria":   {"water": 1.2, "food": 0.9, "energy": 0.6, "land": 0.2},
+    "agrovia":   {"water": 0.9, "food": 1.4, "energy": 0.7, "land": 0.4},
+    "petrozon":  {"water": 0.7, "food": 0.6, "energy": 1.5, "land": 0.3},
+    "urbanex":   {"water": 1.5, "food": 1.4, "energy": 1.2, "land": 0.7},
+    "terranova": {"water": 0.8, "food": 0.9, "energy": 0.7, "land": 0.3},
 }
 
 # ---------------------------------------------------------------------------
-# Neighbor Map — global trade (all-to-all mirrors modern global trade).
-# Distance penalty: after cycle 30, non-adjacent trades transfer fewer units.
+# Special Abilities - unique passive per region (applied after consume)
+# ---------------------------------------------------------------------------
+
+SPECIAL_ABILITIES = {
+    "aquaria": {
+        # Amazon basin: continuous water cycle replenishment
+        "ability": "water_regeneration",
+        "resource": "water",
+        "regen_rate": 3.0,
+        "description": "Amazon basin natural water cycle",
+    },
+    "agrovia": {
+        # Monsoon agriculture: food regenerates if enough land cultivated
+        "ability": "food_regeneration",
+        "resource": "food",
+        "regen_rate": 3.0,
+        "land_threshold": 25,
+        "description": "Monsoon agricultural cycle",
+    },
+    "petrozon": {
+        # Vast oil reserves: passive energy extraction each cycle
+        "ability": "energy_regeneration",
+        "resource": "energy",
+        "regen_rate": 2.5,
+        "description": "Vast oil reserve base",
+    },
+    "urbanex": {
+        # China's manufacturing economy: trade without resource surplus
+        "ability": "manufacturing_power",
+        "initial_value": 85,
+        "regen_rate": 1.0,          # manufacturing rebuilds 1/cycle when not trading
+        "trade_trust_bonus": 15,
+        "trade_amount_bonus": 5,
+        "invest_improvement": 3,
+        "description": "Manufacturing export economy",
+    },
+    "terranova": {
+        # Undeveloped land: invest yields multiplied returns
+        "ability": "land_development",
+        "invest_multiplier": 2.0,
+        "regen_rate": 1.5,          # passive land improvement from development
+        "description": "Undeveloped land potential",
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Neighbor Map — all-to-all (global trade, mirrors modern reality)
 # ---------------------------------------------------------------------------
 
 NEIGHBOR_MAP = {
@@ -105,7 +159,10 @@ NEIGHBOR_MAP = {
     "terranova": ["aquaria", "agrovia",  "petrozon", "urbanex"],
 }
 
-# Adjacent pairs (shorter distance, full transfer amount)
+# ---------------------------------------------------------------------------
+# Adjacent pairs - shorter supply chains, full transfer amount
+# ---------------------------------------------------------------------------
+
 ADJACENT_PAIRS = {
     frozenset(["aquaria",   "agrovia"]),
     frozenset(["aquaria",   "terranova"]),
@@ -116,57 +173,29 @@ ADJACENT_PAIRS = {
 }
 
 # ---------------------------------------------------------------------------
-# Special Abilities — each region has a unique passive or active edge
+# Agent weight update rules (used in agent.py)
 # ---------------------------------------------------------------------------
 
-SPECIAL_ABILITIES = {
-    "aquaria": {
-        # Amazon basin: rivers and rainfall replenish water naturally
-        "ability": "water_regeneration",
-        "resource": "water",
-        "regen_rate": 2.0,
-        "description": "Amazon basin natural water cycle",
-    },
-    "agrovia": {
-        # Monsoon agriculture: food regenerates if enough land is cultivated
-        "ability": "food_regeneration",
-        "resource": "food",
-        "regen_rate": 3.0,
-        "land_threshold": 30,
-        "description": "Monsoon agricultural cycle",
-    },
-    "petrozon": {
-        # Vast oil reserves: energy base-level regeneration from extraction
-        "ability": "energy_regeneration",
-        "resource": "energy",
-        "regen_rate": 1.5,
-        "description": "Vast oil reserve base",
-    },
-    "urbanex": {
-        # Manufacturing economy: offer manufactured goods instead of raw resources
-        "ability": "manufacturing_power",
-        "initial_value": 85,
-        "trade_trust_bonus": -10,      # lower trust required to trade
-        "trade_amount_bonus": 5,       # extra units gained per trade
-        "invest_improvement": 3,       # bonus resource gain per invest cycle
-        "description": "Manufacturing export economy",
-    },
-    "terranova": {
-        # Undeveloped land: investment yields higher returns than other regions
-        "ability": "land_development",
-        "invest_multiplier": 1.8,
-        "description": "Undeveloped land potential",
-    },
+WEIGHT_UPDATE_RULES = {
+    "trade_success":        {"trade":  0.08, "aggress": -0.03},
+    "trade_rejected":       {"trade": -0.06, "hoard":   0.05},
+    "hoard_success":        {"hoard":  0.07, "invest":  -0.03},
+    "hoard_hurt":           {"hoard": -0.07, "trade":   0.04},
+    "invest_payoff":        {"invest": 0.08, "hoard":  -0.02},
+    "aggress_success":      {"aggress": 0.08, "trade":  -0.05},
+    "aggress_failed":       {"aggress": -0.10, "hoard":  0.05},
+    "emergency_hoard":      {"hoard":  0.12, "aggress": 0.03,
+                             "invest": -0.08, "trade":  -0.07},
 }
 
 # ---------------------------------------------------------------------------
-# Region Roles (flavor text for UI and analysis)
+# Region Roles (flavor text)
 # ---------------------------------------------------------------------------
 
 REGION_ROLES = {
-    "aquaria":   "Water-rich / Amazon Basin",
-    "agrovia":   "Agriculture-heavy / South Asia",
-    "petrozon":  "Energy-dominant / Middle East",
-    "urbanex":   "Manufacturing / East Asia",
-    "terranova": "Balanced / South America",
+    "aquaria":   "Water-rich / Amazon Basin (Brazil)",
+    "agrovia":   "Agriculture-heavy / South Asia (India)",
+    "petrozon":  "Energy-dominant / Gulf States",
+    "urbanex":   "Manufacturing superpower / East Asia (China)",
+    "terranova": "Balanced / Developing Africa",
 }

@@ -139,6 +139,10 @@ class World:
 
         regions_list = list(self.regions.values())
 
+        # Reset per-cycle climate hit counter for each region
+        for region in regions_list:
+            region.climate_hits_this_cycle = 0
+
         # Snapshot BEFORE this cycle for reward calculation
         pre_states = {
             rid: region.to_dict() for rid, region in self.regions.items()
@@ -154,18 +158,19 @@ class World:
         for region in regions_list:
             region.consume()
 
-        # ── Phase 2b: Special Abilities ────────────────────────────
-        # Regen runs AFTER consume so it offsets depletion naturally.
-        # Aquaria +2 water, Agrovia +3 food, Petrozon +1.5 energy per cycle.
-        for region in regions_list:
-            region.apply_special_ability()
-
-        # ── Phase 2c: Population Dynamics ─────────────────────────
-        # Runs AFTER consume+regen so avg_resources reflects true state.
+        # ── Phase 3: Population Dynamics ─────────────────────────
+        # Runs AFTER consume so depletion is accounted for.
         for region in regions_list:
             region.update_population()
 
-        # ── Phase 3: Agent Decisions ───────────────────────────────
+        # ── Phase 4: Special Abilities ────────────────────────────
+        # Regen runs AFTER consume+population so it offsets depletion naturally.
+        # Aquaria +3 water, Agrovia +3 food (if land > 25), Petrozon +2.5 energy per cycle.
+        # Urbanex +1.0 manufacturing power, Terranova land development.
+        for region in regions_list:
+            region.apply_special_ability()
+
+        # ── Phase 5: Agent Decisions ───────────────────────────────
         for region_id, agent in self.agents.items():
             region = self.regions[region_id]
             status = region.get_resource_status()
@@ -190,26 +195,26 @@ class World:
             action = agent.decide(observation)
             region.last_action = action
 
-        # ── Phase 4: Trade Phase ───────────────────────────────────
+        # ── Phase 6: Trade Phase ───────────────────────────────────
         # Pass cycle so distant-pair distance penalty applies after cycle 30.
         trade_events = run_trade_phase(regions_list, cycle=self.cycle)
         for event in trade_events:
             event["cycle"] = self.cycle
             self.events_this_cycle.append(event)
 
-        # ── Phase 5: Conflict Phase ────────────────────────────────
+        # ── Phase 7: Conflict Phase ────────────────────────────────
         conflict_events = run_conflict_phase(regions_list)
         for event in conflict_events:
             event["cycle"] = self.cycle
             self.events_this_cycle.append(event)
 
-        # ── Phase 6: Reward Calculation ────────────────────────────
+        # ── Phase 8: Reward Calculation ────────────────────────────
         for region_id, region in self.regions.items():
             post_state = region.to_dict()
             reward = calculate_reward(pre_states[region_id], post_state)
             region.last_reward = reward
 
-        # ── Phase 7: Weight Adaptation ─────────────────────────────
+        # ── Phase 9: Weight Adaptation ─────────────────────────────
         for region_id, agent in self.agents.items():
             region = self.regions[region_id]
             action = region.last_action
@@ -224,16 +229,16 @@ class World:
             region.strategy_weights = dict(agent.strategy_weights)
             region.strategy_label = agent.strategy_label
 
-        # ── Phase 8: Health Recalculation ──────────────────────────
+        # ── Phase 10: Health Recalculation ──────────────────────────
         for region in regions_list:
             region.calculate_health()
             region.cycle = self.cycle
 
-        # ── Phase 9: History Logging ───────────────────────────────
+        # ── Phase 11: History Logging ───────────────────────────────
         for region in regions_list:
             region.log_history()
 
-        # ── Phase 10: Firestore Persistence ────────────────────────
+        # ── Phase 12: Firestore Persistence ────────────────────────
         self._persist_cycle()
 
         # Accumulate events
@@ -277,12 +282,16 @@ class World:
                 speed=self.speed,
             )
 
-            # Write cycle log snapshot
+            # Write cycle log snapshot — includes events_fired for analysis_service
             snapshot = {
                 rid: region.to_dict()
                 for rid, region in self.regions.items()
             }
-            write_cycle_log(self.cycle, snapshot)
+            write_cycle_log(
+                self.cycle,
+                snapshot,
+                events_fired=self.events_this_cycle,
+            )
 
             # Write individual events
             for event in self.events_this_cycle:

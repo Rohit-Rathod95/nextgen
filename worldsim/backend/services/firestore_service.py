@@ -237,7 +237,7 @@ def write_event(event_type: str,
 # FUNCTION 5 - Write Cycle Log
 # ---------------------------------------------------------------------------
 
-def write_cycle_log(cycle: int, regions_snapshot: dict) -> bool:
+def write_cycle_log(cycle: int, regions_snapshot: dict, events_fired: list = None) -> bool:
     """
     Write a complete world snapshot for a specific cycle.
 
@@ -248,6 +248,8 @@ def write_cycle_log(cycle: int, regions_snapshot: dict) -> bool:
         cycle:            Cycle number (1-100).
         regions_snapshot: Dictionary keyed by region_id, each containing
                           the full region state for this cycle.
+        events_fired:     List of event dicts that occurred this cycle.
+                          Required by analysis_service.
 
     Returns:
         True if the write succeeded, False otherwise.
@@ -261,6 +263,7 @@ def write_cycle_log(cycle: int, regions_snapshot: dict) -> bool:
         data = {
             "cycle": cycle,
             "regions_snapshot": regions_snapshot,
+            "events_fired": events_fired or [],
             "timestamp": firestore.SERVER_TIMESTAMP,
         }
 
