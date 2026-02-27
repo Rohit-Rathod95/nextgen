@@ -356,7 +356,7 @@ npm run dev
 | Nayan (Frontend)   | React dashboard & UI      | Map, charts, chatbot, styling    |
 | Soumya (Data)     | Analysis & insights       | Chatbot logic, analytics layer   |
 
-Built in **24 hours** during Hackathon 2026.
+Built in **24 hours** during SIT-Inovate 2026.
 
 ---
 
