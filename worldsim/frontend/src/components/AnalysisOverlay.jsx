@@ -319,6 +319,8 @@ The single biggest turning point was likely the first major climate event — it
 
     const generateAnswer = (question, analysis, regions, cycleLogs) => {
         const q = question.toLowerCase().trim();
+        // debug logging to help track why answers may be wrong
+        console.debug("[analysis-chatbot] question:", q);
 
         const COUNTRY_TO_REGION = {
             "brazil": "Aquaria", "south america": "Aquaria", "aquaria": "Aquaria",
@@ -355,7 +357,9 @@ The single biggest turning point was likely the first major climate event — it
         }
 
         function getRegion(regionId) {
-            return regions?.[regionId];
+            if (!regions) return null;
+            // support regionId in either case; keys may be lowercase or uppercase
+            return regions[regionId] || regions[regionId?.toLowerCase()] || null;
         }
 
         function getClimateEventsForResource(resource) {
@@ -430,7 +434,7 @@ The single biggest turning point was likely the first major climate event — it
 
         // ─── GROUP 1: RESOURCE QUESTIONS ───
         const mentionedResource = findMentionedResource(q);
-        const isResourceQuestion = (q.includes("why") || q.includes("how") || q.includes("what happened") || q.includes("low") || q.includes("less") || q.includes("drop") || q.includes("fell") || q.includes("decrease")) && mentionedResource !== null;
+        const isResourceQuestion = mentionedResource && /\b(why|how|what|status|level|amount|low|less|drop|fell|decrease)\b/.test(q);
 
         if (isResourceQuestion) {
             const resource = mentionedResource;
@@ -530,7 +534,7 @@ The single biggest turning point was likely the first major climate event — it
         }
 
         // ─── GROUP 9: SUMMARY/GENERAL ───
-        if (q.includes("summary") || q.includes("explain") || q.includes("overview")) {
+        if (/(summary|explain|what happened|overview|describe)/i.test(q)) {
             const winner = getWinner();
             const collapsed = getCollapsed();
             return `🌍 Simulation Summary:\n\nWinner: ${REGION_LABELS[winner] || 'Tie'}\nCollapsed: ${collapsed.length}\nAlliances: ${analysis?.alliance_clusters?.length || 0}\n\n${analysis?.simulation_summary || 'Complex geopolitical dynamics over 20 years.'}`;
@@ -615,12 +619,13 @@ The single biggest turning point was likely the first major climate event — it
     });
 
     // Suggested questions for chatbot
+    // examples that align with the answer generator rules
     const suggestedQuestions = [
-        '📈 Which strategy worked best?',
-        '🌍 What does this reveal about the real world?',
-        '⚡ What was the biggest turning point?',
-        '📅 Year by year breakdown',
-        '💧 How did climate events affect outcomes?',
+        '💧 Why did water decrease in China?',
+        '💀 Which region collapsed?',
+        '🏆 Who won the simulation?',
+        '📅 What happened in year 2030?',
+        '⚡ How did climate events affect food?'
     ];
 
     if (collapsed > 0) {
