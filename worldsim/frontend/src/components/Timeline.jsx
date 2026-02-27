@@ -140,7 +140,10 @@ export default function Timeline({ worldState, isFirebaseReady }) {
         setApiError(null);
         setIsRunning(true);
         try {
-            await apiCall('/start');
+            const result = await startSimulation();
+            if (result.error) {
+                throw new Error(result.error);
+            }
         } catch (e) {
             setApiError(e.message);
             setIsRunning(false);
