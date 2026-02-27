@@ -59,36 +59,78 @@ export default function Timeline({ worldState, isFirebaseReady }) {
     const ringColor = pct < 40 ? '#0ea5e9' : pct < 75 ? '#f59e0b' : '#ef4444';
 
     // ── Start ──────────────────────────────────────────────────────────────────
-    const handleStart = async () => {
-        const result = await startSimulation();
-        if (result.error) {
-            console.error('Could not start:', result.error);
+    const handleStart = useCallback(async () => {
+        if (isRunning || isLoading) return; // guard double-click
+        setIsLoading(true);
+        setApiError(null);
+        setIsRunning(true); // optimistic
+        try {
+            const result = await startSimulation();
+            if (result.error) {
+                throw new Error(result.error);
+            }
+        } catch (e) {
+            console.error('Could not start:', e.message);
+            setApiError(e.message);
+            setIsRunning(false);
+        } finally {
+            setIsLoading(false);
         }
-    };
+    }, [isRunning, isLoading]);
 
     // ── Pause ──────────────────────────────────────────────────────────────────
-    const handlePause = async () => {
-        const result = await pauseSimulation();
-        if (result.error) {
-            console.error('Could not pause:', result.error);
+    const handlePause = useCallback(async () => {
+        if (!isRunning || isLoading) return;
+        setIsLoading(true);
+        setApiError(null);
+        setIsRunning(false);
+        try {
+            const result = await pauseSimulation();
+            if (result.error) throw new Error(result.error);
+        } catch (e) {
+            console.error('Could not pause:', e.message);
+            setApiError(e.message);
+            setIsRunning(true);
+        } finally {
+            setIsLoading(false);
         }
-    };
+    }, [isRunning, isLoading]);
 
     // ── Resume ─────────────────────────────────────────────────────────────────
-    const handleResume = async () => {
-        const result = await resumeSimulation();
-        if (result.error) {
-            console.error('Could not resume:', result.error);
+    const handleResume = useCallback(async () => {
+        if (isRunning || isLoading) return;
+        setIsLoading(true);
+        setApiError(null);
+        setIsRunning(true);
+        try {
+            const result = await resumeSimulation();
+            if (result.error) throw new Error(result.error);
+        } catch (e) {
+            console.error('Could not resume:', e.message);
+            setApiError(e.message);
+            setIsRunning(false);
+        } finally {
+            setIsLoading(false);
         }
-    };
+    }, [isRunning, isLoading]);
 
     // ── Stop ───────────────────────────────────────────────────────────────────
-    const handleStop = async () => {
-        const result = await stopSimulation();
-        if (result.error) {
-            console.error('Could not stop:', result.error);
+    const handleStop = useCallback(async () => {
+        if (!isRunning || isLoading) return;
+        setIsLoading(true);
+        setApiError(null);
+        setIsRunning(false);
+        try {
+            const result = await stopSimulation();
+            if (result.error) throw new Error(result.error);
+        } catch (e) {
+            console.error('Could not stop:', e.message);
+            setApiError(e.message);
+            setIsRunning(true);
+        } finally {
+            setIsLoading(false);
         }
-    };
+    }, [isRunning, isLoading]);
 
 
     // ── Restart (after simDone) ────────────────────────────────────────────────

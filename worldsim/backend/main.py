@@ -79,6 +79,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# root path — helpful when code mistakenly hits BASE without endpoint
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "WorldSim API is running"}
+
 # CORS — allow frontend dev server and deployed URLs (permit everything for demo)
 app.add_middleware(
     CORSMiddleware,

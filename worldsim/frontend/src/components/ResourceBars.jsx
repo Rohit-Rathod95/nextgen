@@ -78,9 +78,12 @@ export default function ResourceBars({ region }) {
     if (!region) return null;
     return (
         <div>
-            {RESOURCES.map((r) => (
-                <ResourceBar key={r.key} {...r} value={region[r.key] ?? 0} />
-            ))}
+            {RESOURCES.map((r) => {
+                const { key, ...props } = r;
+                return (
+                    <ResourceBar key={key} {...props} value={region[key] ?? 0} />
+                );
+            })}
         </div>
     );
 }
