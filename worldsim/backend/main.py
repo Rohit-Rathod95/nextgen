@@ -116,13 +116,13 @@ async def start_simulation():
     and launches the simulation as a background async task.
     """
     global simulation_task
-
-    if world.is_running:
-        raise HTTPException(
-            status_code=409,
-            detail="Simulation is already running. "
-                   "Stop it first or wait for completion.",
-        )
+    
+    try:
+        world.is_running = False
+        world.is_paused = False
+        world.current_cycle = 0
+    except:
+        pass
 
     # Fresh setup
     world.setup()
