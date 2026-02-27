@@ -4,8 +4,16 @@ import { GLOBAL_CONSTANTS } from '../constants/regions_meta';
 
 const { TOTAL_CYCLES } = GLOBAL_CONSTANTS;
 
-// Backend API base URL — reads from .env VITE_API_BASE_URL, defaults to localhost
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// Backend API functions
+import {
+  startSimulation,
+  pauseSimulation,
+  resumeSimulation,
+  stopSimulation,
+  setSpeed,
+  getState,
+  checkHealth,
+} from '../services/api';
 
 const EVENT_TYPE_COLORS = {
     drought: { icon: '☀️', color: '#f59e0b' },
@@ -16,14 +24,6 @@ const EVENT_TYPE_COLORS = {
     None: { icon: '✅', color: '#4ade80' },
 };
 
-async function apiCall(endpoint) {
-    const res = await fetch(`${API_BASE}${endpoint}`, { method: 'POST' });
-    if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${res.status}`);
-    }
-    return res.json();
-}
 
 export default function Timeline({ worldState, isFirebaseReady }) {
     const { current_cycle = 0, current_event = 'None', is_running = false } = worldState || {};
@@ -59,68 +59,37 @@ export default function Timeline({ worldState, isFirebaseReady }) {
     const ringColor = pct < 40 ? '#0ea5e9' : pct < 75 ? '#f59e0b' : '#ef4444';
 
     // ── Start ──────────────────────────────────────────────────────────────────
-    const handleStart = useCallback(async () => {
-        if (isRunning || isLoading) return;   // hard guard — prevent double calls
-        setIsLoading(true);
-        setApiError(null);
-        setIsRunning(true);                   // optimistic update
-        try {
-            await apiCall('/start');
-        } catch (e) {
-            setApiError(e.message);
-            setIsRunning(false);              // rollback on error
-        } finally {
-            setIsLoading(false);
+    const handleStart = async () => {
+        const result = await startSimulation();
+        if (result.error) {
+            console.error('Could not start:', result.error);
         }
-    }, [isRunning, isLoading]);
+    };
 
     // ── Pause ──────────────────────────────────────────────────────────────────
-    const handlePause = useCallback(async () => {
-        if (!isRunning || isLoading) return;
-        setIsLoading(true);
-        setApiError(null);
-        setIsRunning(false);
-        try {
-            await apiCall('/pause');
-        } catch (e) {
-            setApiError(e.message);
-            setIsRunning(true);
-        } finally {
-            setIsLoading(false);
+    const handlePause = async () => {
+        const result = await pauseSimulation();
+        if (result.error) {
+            console.error('Could not pause:', result.error);
         }
-    }, [isRunning, isLoading]);
+    };
 
     // ── Resume ─────────────────────────────────────────────────────────────────
-    const handleResume = useCallback(async () => {
-        if (isRunning || isLoading) return;
-        setIsLoading(true);
-        setApiError(null);
-        setIsRunning(true);
-        try {
-            await apiCall('/resume');
-        } catch (e) {
-            setApiError(e.message);
-            setIsRunning(false);
-        } finally {
-            setIsLoading(false);
+    const handleResume = async () => {
+        const result = await resumeSimulation();
+        if (result.error) {
+            console.error('Could not resume:', result.error);
         }
-    }, [isRunning, isLoading]);
+    };
 
     // ── Stop ───────────────────────────────────────────────────────────────────
-    const handleStop = useCallback(async () => {
-        if (!isRunning || isLoading) return;
-        setIsLoading(true);
-        setApiError(null);
-        setIsRunning(false);
-        try {
-            await apiCall('/stop');
-        } catch (e) {
-            setApiError(e.message);
-            setIsRunning(true);
-        } finally {
-            setIsLoading(false);
+    const handleStop = async () => {
+        const result = await stopSimulation();
+        if (result.error) {
+            console.error('Could not stop:', result.error);
         }
-    }, [isRunning, isLoading]);
+    };
+
 
     // ── Restart (after simDone) ────────────────────────────────────────────────
     const handleRestart = useCallback(async () => {

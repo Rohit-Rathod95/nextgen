@@ -79,18 +79,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow frontend dev server and deployed URLs
+# CORS — allow frontend dev server and deployed URLs (permit everything for demo)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:3000",
-        "https://nextgen-48ti.vercel.app",  # Deployed frontend
-    ],
+    allow_origins=["*"],  # wildcard allowed for hackathon/demo
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
