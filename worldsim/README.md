@@ -352,9 +352,9 @@ npm run dev
 
 | Name            | Role                      | Contributions                    |
 |-----------------|---------------------------|----------------------------------|
-| Alice (Architect)| Backend & simulation core | Python engine, reward loop      |
-| Bob (Frontend)   | React dashboard & UI      | Map, charts, chatbot, styling    |
-| Carol (Data)     | Analysis & insights       | Chatbot logic, analytics layer   |
+| Rohit (Architect)| Backend & simulation core | Python engine, reward loop      |
+| Nayan (Frontend)   | React dashboard & UI      | Map, charts, chatbot, styling    |
+| Soumya (Data)     | Analysis & insights       | Chatbot logic, analytics layer   |
 
 Built in **24 hours** during Hackathon 2026.
 
