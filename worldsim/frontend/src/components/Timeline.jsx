@@ -4,8 +4,8 @@ import { GLOBAL_CONSTANTS } from '../constants/regions_meta';
 
 const { TOTAL_CYCLES } = GLOBAL_CONSTANTS;
 
-// Backend API base URL
-const API_BASE = 'http://localhost:8000';
+// Backend API base URL — reads from .env VITE_API_BASE_URL, defaults to localhost
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 const EVENT_TYPE_COLORS = {
     drought: { icon: '☀️', color: '#f59e0b' },
